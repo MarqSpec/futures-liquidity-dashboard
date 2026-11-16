@@ -1,0 +1,3 @@
+# The frontends (CONVENTIONS.md §2, §9). pnpm-lock.yaml pins all of them.
+packages:
+  - src/dashboard

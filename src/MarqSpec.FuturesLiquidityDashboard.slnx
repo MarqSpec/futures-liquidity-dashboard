@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/MarqSpec.FuturesLiquidityDashboard.IntegrationTests/MarqSpec.FuturesLiquidityDashboard.IntegrationTests.csproj" />
+    <Project Path="tests/MarqSpec.FuturesLiquidityDashboard.UnitTests/MarqSpec.FuturesLiquidityDashboard.UnitTests.csproj" />
+  </Folder>
+  <Project Path="MarqSpec.FuturesLiquidityDashboard.Api/MarqSpec.FuturesLiquidityDashboard.Api.csproj" />
+  <Project Path="MarqSpec.FuturesLiquidityDashboard.Core/MarqSpec.FuturesLiquidityDashboard.Core.csproj" />
+  <Project Path="MarqSpec.FuturesLiquidityDashboard.Ingestion/MarqSpec.FuturesLiquidityDashboard.Ingestion.csproj" />
+</Solution>

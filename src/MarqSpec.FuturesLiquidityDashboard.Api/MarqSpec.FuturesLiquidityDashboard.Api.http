@@ -1,0 +1,20 @@
+@host = http://localhost:5080
+
+GET {{host}}/api/instruments
+Accept: application/json
+
+###
+
+GET {{host}}/api/snapshot/ES?historyMinutes=5
+Accept: application/json
+
+###
+
+GET {{host}}/api/context/GC
+Accept: application/json
+
+###
+
+GET {{host}}/health/ready
+
+###

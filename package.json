@@ -1,0 +1,14 @@
+{
+  "name": "marq-spec-futures-liquidity-dashboard-workspace",
+  "private": true,
+  "description": "The frontends' pnpm workspace root (CONVENTIONS.md §2, §9). The repository's version is set by DEPLOYMENT.md *Versioning*.",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "lint": "pnpm -r --if-present run lint",
+    "test": "pnpm -r --if-present run test"
+  }
+}

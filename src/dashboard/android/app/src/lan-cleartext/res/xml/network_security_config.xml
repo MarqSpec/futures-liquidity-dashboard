@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only, via app/build.gradle sourceSets.debug. Release keeps the main config, which denies cleartext.
+     Cleartext is off for every host that is not listed. Android matches a domain entry as one hostname, not a
+     CIDR prefix (the character before the configured host must be a dot), so 10.0.0.0/8 cannot be written as
+     10.0.0.0. Loopback and the emulator's host alias are listed. The page also refuses an http origin that is
+     not loopback or RFC 1918 (src/lib/serverUrl.ts). A phone reaches a computer as 127.0.0.1 through adb reverse.
+     DEPLOYMENT.md. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">::1</domain>
+        <!-- The emulator's alias for the host machine. It is inside 10.0.0.0/8. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

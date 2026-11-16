@@ -1,0 +1,52 @@
+# Local development for Live Futures Liquidity Dashboard: every service built from source.
+# Ports are published on 127.0.0.1 unless API_BIND_ADDRESS is set. 0.0.0.0 publishes the API on
+# the LAN so a phone can reach it, and exposes Development's anonymous grants to that network
+# (DEPLOYMENT.md, T-9). Leave the variable unset when you are done.
+#
+#   docker compose up --build
+#   docker compose --profile test build unit-tests
+
+services:
+  futuresliquiditydashboard.api:
+    image: futures-liquidity-dashboard-futuresliquiditydashboard.api:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        VERSION: 0.0.0-dev
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:5080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Synthetic by default: the demo needs no credentials (ARCHITECTURE.md D-12). For TopstepX set FEED_PROVIDER=ProjectX
+      # and export exactly one credential pair in the shell. They are passed through, never stored here.
+      # Preferred: PROJECTX_USERNAME + PROJECTX_API_KEY (loginKey userName and apiKey).
+      # Older: PROJECTX_API_KEY is the user name and PROJECTX_API_SECRET is the api key.
+      # If both pairs are set, the username pair wins and PROJECTX_API_SECRET is ignored.
+      Feed__Provider: ${FEED_PROVIDER:-Synthetic}
+      PROJECTX_USERNAME: ${PROJECTX_USERNAME:-}
+      PROJECTX_API_KEY: ${PROJECTX_API_KEY:-}
+      PROJECTX_API_SECRET: ${PROJECTX_API_SECRET:-}
+
+  dashboard:
+    image: futures-liquidity-dashboard-dashboard:dev
+    build:
+      context: .
+      dockerfile: src/dashboard/Dockerfile
+      target: runtime
+      args:
+        VERSION: 0.0.0-dev
+    ports:
+      - "127.0.0.1:5173:8080"
+    depends_on:
+      - futuresliquiditydashboard.api
+
+  unit-tests:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    # The tests run while the `test` stage builds; this only reports success.
+    command: ["true"]

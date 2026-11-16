@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Hosting, options and logging abstractions for the hosted ingestion service (ARCHITECTURE.md D-11). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- TopstepX through the ProjectX gateway: the production feed (ARCHITECTURE.md D-15). -->
+    <PackageReference Include="MarqSpec.Client.ProjectX" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MarqSpec.FuturesLiquidityDashboard.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MarqSpec.FuturesLiquidityDashboard.Core\MarqSpec.FuturesLiquidityDashboard.Core.csproj" />
+  </ItemGroup>
+
+</Project>

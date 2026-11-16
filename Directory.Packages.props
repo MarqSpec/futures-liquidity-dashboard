@@ -1,0 +1,44 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- A PackageVersion below also pins that package when it arrives transitively, so a security pin
+         reaches every project without each one adding a direct reference. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Every PackageVersion carries a one-line comment: why this package. -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <!-- The test framework's own packages arrive with `dotnet new` and are pinned here by cpm-adopt.py. -->
+    <!-- FakeItEasy: test doubles in the unit tier. -->
+    <PackageVersion Include="FakeItEasy" Version="9.0.1" />
+    <!-- FakeTimeProvider: unit tests drive timers, delays and backoff without the real clock. -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <!-- FluentAssertions v8+ is commercially licensed: stay below 8.0.0. -->
+    <PackageVersion Include="FluentAssertions" Version="7.2.2" />
+    <!-- Pinned so CPM (cpm-adopt.py keeps a pin already here) overrides the version the installed SDK's `webapi` template
+         writes: each SDK patch ships a different Microsoft.AspNetCore.OpenApi, and its Microsoft.OpenApi dependency floor
+         moves with it (10.0.9: >= 2.0.0, 10.0.12: [2.12.0, 3.0.0), nuget.org). Raise the two together. -->
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <!-- Security pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi 2.0.0 in older templates, which has a
+         high-severity advisory (GHSA-v5pm-xwqc-g5wc, patched in 2.7.5); the NuGet audit fails the build.
+         The floor is the dependency of the pinned Microsoft.AspNetCore.OpenApi above: a lower pin is NU1109 (package downgrade). -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.20.1-beta.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.2" />
+    <!-- The ProjectX (TopstepX) gateway client: REST auth, contracts, history bars and the SignalR market hub (ARCHITECTURE.md D-15). -->
+    <PackageVersion Include="MarqSpec.Client.ProjectX" Version="3.0.0" />
+    <!-- Security pins: MarqSpec.Client.ProjectX 3.0.0 brings SignalR client 10.0.11, whose SignalR.Common has a
+         high-severity advisory (GHSA-334f-vvp4-7g6p); the NuGet audit fails the build. Keep the SignalR family together. -->
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Common" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Protocols.Json" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Http.Connections.Client" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Http.Connections.Common" Version="10.0.14" />
+    <!-- WebApplicationFactory for the integration tier. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>

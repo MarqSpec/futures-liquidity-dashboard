@@ -1,0 +1,12 @@
+# API service settings for a Railway service whose root is this repository.
+# Image-source deploys (the intended path: scripts/deploy.sh pulls GHCR and does not build from
+# GitHub) do not read this file. Set the same values on the API service in the Railway UI.
+# The API holds the one ProjectX session and all market state in memory, so it stays one replica
+# and a deploy does not keep the previous instance beside the new one (DEPLOYMENT.md).
+
+[deploy]
+numReplicas = 1
+overlapSeconds = 0
+healthcheckPath = "/health/live"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"

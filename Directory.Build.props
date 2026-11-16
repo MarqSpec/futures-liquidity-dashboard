@@ -1,0 +1,26 @@
+<Project>
+
+  <!-- Solution-wide language, analyzer and audit settings (CONVENTIONS.md §1, §2).
+       Declared once here; projects do not redeclare them. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- Applies the root .editorconfig's code-style severities in every build, as it does in the IDE:
+         without it, its file_scoped:error is never a build error. The severities stay in .editorconfig. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <!-- The one version for the repository: SemVer X.Y.Z, bumped on develop before a release (§14).
+       PackageVersion, every frontend's package.json, the image tag :X.Y.Z and the git
+       tag vX.Y.Z all come from it; scripts/check-versions.sh holds them together. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>

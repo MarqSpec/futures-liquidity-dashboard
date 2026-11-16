@@ -1,0 +1,37 @@
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+**/TestResults/
+**/node_modules/
+**/dist/
+.git/
+.github/
+.claude/
+documentation/
+*.md
+Dockerfile
+compose.yaml
+.dockerignore
+
+# The git-ignored local secrets compose reads: never sent to the builder, so no COPY can put them in an image.
+# The committed .env.example holds no secrets and is not excluded.
+.env
+
+# Python: the local environment and caches are rebuilt inside the image
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# TypeScript incremental build info: rebuilt inside the image
+**/*.tsbuildinfo
+
+# Next.js build output: rebuilt inside the image
+**/.next/
+
+# The Android shell is not part of the dashboard image. Keep keystores out of the build context.
+src/dashboard/android/
+**/*.jks
+**/*.keystore

@@ -1,0 +1,2329 @@
+:root {
+  color-scheme: dark;
+  font: 12px/1.4 var(--font-sans);
+  color: var(--on-surface-variant);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+/* Button: outlined by default; .filled, .tonal and .text are the other emphases. A state layer carries hover and press. */
+button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  height: var(--control-height);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-high);
+  color: var(--on-surface);
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  white-space: nowrap;
+}
+
+button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  z-index: -1;
+}
+
+button:hover::before {
+  background: var(--state-hover);
+}
+
+button:active::before {
+  background: var(--state-pressed);
+}
+
+button:hover {
+  border-color: var(--primary);
+}
+
+button.filled {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+button.filled[aria-pressed="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+button.tonal,
+button[aria-pressed="true"],
+button[aria-selected="true"] {
+  background: var(--primary-container);
+  border-color: var(--primary);
+  color: var(--on-primary-container);
+}
+
+button.text {
+  background: transparent;
+  border-color: transparent;
+  color: var(--primary);
+}
+
+button.text:hover {
+  border-color: transparent;
+}
+
+button.small {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-6);
+  font-size: 11px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+  border-color: var(--outline-variant);
+}
+
+button:disabled::before {
+  background: transparent;
+}
+
+/* Icon button: transparent and muted, last-price when pressed. Give it an aria-label. */
+button.icon-button {
+  width: var(--control-height);
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: var(--on-surface-muted);
+}
+
+button.icon-button[aria-pressed="true"] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--last-price);
+}
+
+button.icon-button:disabled {
+  border-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* Text field and select */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"])),
+select {
+  height: var(--control-height);
+  padding: 0 var(--space-8);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-high);
+  color: var(--on-surface);
+}
+
+input:where(:not([type="checkbox"], [type="radio"], [type="range"]))::placeholder {
+  color: var(--on-surface-muted);
+}
+
+input:where(:not([type="checkbox"], [type="radio"], [type="range"])):hover,
+select:hover {
+  border-color: var(--on-surface-muted);
+}
+
+input:where(:not([type="checkbox"], [type="radio"], [type="range"])):focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+  border-color: var(--primary);
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+select {
+  font-weight: 600;
+  padding-right: var(--space-4);
+}
+
+.field-help {
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+.field-help.field-help-error {
+  color: var(--error);
+}
+
+h2 {
+  font-size: 12px;
+  margin: 0 0 4px;
+  color: var(--on-surface);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h3 {
+  font-size: 11px;
+  margin: 8px 0 2px;
+  color: var(--on-surface-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+p {
+  margin: 0 0 4px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--on-surface-muted);
+  font-weight: normal;
+}
+
+.small-text {
+  font-size: 11px;
+}
+
+.error {
+  color: var(--error);
+}
+
+.warn-text {
+  color: var(--status-simulated);
+}
+
+.bid-text {
+  color: var(--bid);
+}
+
+.ask-text {
+  color: var(--ask);
+}
+
+/* Page frame: the view tabs on top, the selected view fills the rest of the viewport. On Detail the status bar
+   and product picker sit above the workspace. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Top bar: the product name, the view tabs, then the session, hub state and exchange clock. Wraps on a narrow window. */
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-12);
+  padding: 0 var(--space-8);
+  background: var(--surface-low);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.product-name {
+  padding: 0 var(--space-4);
+  font: 600 12px/16px var(--font-sans);
+  color: var(--on-surface);
+  white-space: nowrap;
+}
+
+.view-tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.view-tabs button[role="tab"] {
+  height: 32px;
+  padding: 0 var(--space-12);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font: 500 12px/16px var(--font-sans);
+}
+
+.view-tabs button[role="tab"]:hover {
+  background: var(--state-hover);
+  color: var(--on-surface);
+}
+
+.view-tabs button[role="tab"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.view-tabs button[role="tab"][aria-selected="true"] {
+  background: transparent;
+  color: var(--on-surface);
+}
+
+.view-tabs button[role="tab"][aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: var(--space-8);
+  right: var(--space-8);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary);
+}
+
+.top-bar-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  margin-left: auto;
+}
+
+.clock {
+  font: 500 12px/16px var(--font-mono);
+  color: var(--on-surface-variant);
+}
+
+.view {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.view > .workspace,
+.view > .placeholder {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* The chart row has to be height-bounded: each pane canvas restyles itself from its own measured size. */
+.view > .instrument-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.instrument-panel {
+  display: grid;
+  /* Status, the chart toolbar, the collapsible product list, then the chart. The chart row takes whatever height the list frees. */
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.bookmap {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  background: var(--surface-lowest);
+  color: var(--on-surface-variant);
+}
+
+/* Order Flow controls: the preset, heat and price groups, the selects, and the heat key at the right. */
+.bookmap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-16);
+  align-items: center;
+  padding: var(--space-6) var(--space-12);
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.bookmap-controls fieldset button {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-6);
+  font-size: 11px;
+}
+
+.bookmap-controls .field {
+  font-weight: 500;
+  color: var(--on-surface);
+}
+
+/* The heat key: the five heat stops between the cutoffs the last frame painted with. */
+.bookmap-heat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0 0 0 auto;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+.bookmap-heat-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 160px;
+}
+
+.bookmap-heat-bar {
+  height: 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xs);
+  background: linear-gradient(90deg, var(--heat-0) 0%, var(--heat-25) 25%, var(--heat-50) 50%, var(--heat-75) 75%, var(--heat-100) 100%);
+}
+
+.bookmap-heat-ticks {
+  display: flex;
+  justify-content: space-between;
+  font: 400 10px/13px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.bookmap-heat-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-xs);
+}
+
+.bookmap-heat-added {
+  background: var(--depth-added);
+}
+
+.bookmap-heat-pulled {
+  background: var(--depth-pulled);
+}
+
+.bookmap-heat-max {
+  font-family: var(--font-mono);
+}
+
+/* The Display menu: dimming, the dot filter and size as joined groups, then the display toggles (REQUIREMENTS.md FR-67). */
+.bookmap-display {
+  position: relative;
+}
+
+.bookmap-display-panel {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+  min-width: 240px;
+  padding: var(--space-8);
+  background: var(--surface-highest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+}
+
+.bookmap-display-panel fieldset {
+  flex-wrap: wrap;
+}
+
+.bookmap-display-item {
+  display: flex;
+  align-items: center;
+}
+
+.bookmap-display-item > button {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-6);
+  font-size: 11px;
+}
+
+.bookmap-controls fieldset {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bookmap-controls legend {
+  padding: 0 6px 0 0;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+/* Button groups: joined buttons, the outer corners alone rounded. */
+.segmented button,
+.bookmap-controls fieldset button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.segmented button:first-of-type,
+.bookmap-controls fieldset button:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  margin-left: 0;
+}
+
+.segmented button:last-of-type,
+.bookmap-controls fieldset button:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.segmented button:only-of-type,
+.bookmap-controls fieldset button:only-of-type {
+  border-radius: var(--radius-sm);
+}
+
+.segmented button[aria-pressed="true"],
+.bookmap-controls fieldset button[aria-pressed="true"] {
+  z-index: 1;
+}
+
+.segmented button:focus-visible,
+.bookmap-controls fieldset button:focus-visible {
+  z-index: 2;
+}
+
+.bookmap-hint {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: min(420px, calc(100% - 16px));
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--on-surface-variant);
+  background: var(--scrim-chart);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  pointer-events: auto;
+}
+
+.bookmap-hint button {
+  padding: 1px 6px;
+}
+
+.bookmap-key {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 6px;
+  list-style: none;
+  background: var(--scrim-chart);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.bookmap-key li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bookmap-key .swatch {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid;
+  border-radius: 50%;
+}
+
+.bookmap-tip {
+  position: absolute;
+  z-index: 4;
+  width: 220px;
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--scrim-tooltip);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.bookmap-tip p {
+  margin: 0;
+}
+
+.bookmap-tip p:first-child {
+  font-weight: 700;
+}
+
+.bookmap-note {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--on-surface-muted);
+  background: var(--surface-container);
+}
+
+.bookmap-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 420px;
+  cursor: grab;
+  /* The browser must not steal a vertical touch and cancel the pointer, or the drag never starts (REQUIREMENTS.md FR-67). */
+  touch-action: none;
+}
+
+.bookmap-stage--dragging {
+  cursor: grabbing;
+}
+
+.bookmap-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The readout: label/value pairs in data-sm, each side's value in its colour. */
+.bookmap-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6) var(--space-16);
+  margin: 0;
+  padding: var(--space-6) var(--space-12);
+  font: 400 11px/16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-low);
+  border-top: 1px solid var(--outline-variant);
+}
+
+.bookmap-readout div {
+  display: flex;
+  gap: 6px;
+}
+
+.bookmap-readout dt {
+  color: var(--on-surface-muted);
+}
+
+.bookmap-readout dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--on-surface-variant);
+}
+
+.bookmap-readout .up {
+  color: var(--up);
+}
+
+.bookmap-readout .down {
+  color: var(--down);
+}
+
+.bookmap-readout .bid {
+  color: var(--bid);
+}
+
+.bookmap-readout .ask {
+  color: var(--ask);
+}
+
+/* A phone: the readout is a grid the thumb can read, and the chart does not demand a desktop height. */
+@media (max-width: 640px) {
+  .bookmap-controls fieldset {
+    flex-wrap: wrap;
+  }
+
+  .bookmap-stage {
+    min-height: 280px;
+  }
+
+  .bookmap-readout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    font-size: 13px;
+  }
+
+  .bookmap-heat {
+    margin-left: 0;
+  }
+}
+
+.instrument-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.favorites {
+  position: relative;
+  padding: 4px 8px;
+}
+
+.favorites-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 148px;
+  justify-content: flex-start;
+  background: transparent;
+  border: 1px solid var(--outline);
+  font-family: var(--font-mono);
+}
+
+.favorites-menu {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 2px);
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(280px, calc(100vw - 24px));
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--surface-highest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+}
+
+.favorites-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.favorites-row .select {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+
+.favorites-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.favorites-add input {
+  width: 100%;
+}
+
+.instrument-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 8px 2px;
+}
+
+.instrument-tabs button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "root last change"
+    "vwap level level";
+  gap: 0 8px;
+  text-align: left;
+  height: auto;
+  padding: 4px 8px;
+}
+
+.instrument-tabs .tab-root {
+  grid-area: root;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.instrument-tabs .tab-last {
+  grid-area: last;
+  font-family: var(--font-mono);
+  justify-self: end;
+}
+
+.instrument-tabs .tab-change {
+  grid-area: change;
+  font-family: var(--font-mono);
+  color: var(--up);
+}
+
+.instrument-tabs .tab-change.down {
+  color: var(--down);
+}
+
+.instrument-tabs .tab-meta,
+.instrument-tabs .tab-level {
+  color: var(--on-surface-muted);
+  font-size: 11px;
+}
+
+.instrument-tabs .tab-meta {
+  grid-area: vwap;
+}
+
+.instrument-tabs .tab-level {
+  grid-area: level;
+  justify-self: end;
+}
+
+.instrument-tabs .tab-level.third {
+  color: var(--last-price);
+  font-weight: 700;
+}
+
+.touch-lane {
+  display: flex;
+  flex: 1 1 180px;
+  gap: 12px;
+  margin: 0;
+  padding: 2px 10px 6px;
+  list-style: none;
+  overflow: auto;
+  font-size: 11px;
+}
+
+.touch-lane li {
+  padding: 0 var(--space-8);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  background: var(--surface-high);
+  color: var(--on-surface-muted);
+  white-space: nowrap;
+}
+
+.touch-lane li strong {
+  font-family: var(--font-mono);
+  color: var(--on-surface);
+}
+
+.touch-lane li.third strong,
+.touch-lane li.third {
+  color: var(--last-price);
+  font-weight: 700;
+}
+
+.indicator-dock {
+  flex: 2.4 1 0;
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Collapsed, the dock keeps only its tab strip and the price chart (.pane-main) grows into the height. */
+.indicator-dock.collapsed {
+  flex: none;
+  min-height: 0;
+}
+
+.indicator-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  min-width: 0;
+  padding-right: var(--space-4);
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.indicator-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 4px;
+}
+
+.indicator-strip .icon-button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+  touch-action: manipulation;
+}
+
+.indicator-tabs button {
+  flex: 0 0 auto;
+  min-width: 44px;
+  height: auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 14px;
+  touch-action: manipulation;
+}
+
+.indicator-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The display: flex above would otherwise show a collapsed dock's empty, hidden panel. */
+.indicator-panel[hidden] {
+  display: none;
+}
+
+.indicator-panel > .pane,
+.indicator-panel > .panel {
+  flex: 1 1 0;
+  min-height: 0;
+  border-bottom: 0;
+}
+
+.status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.status-bar .instrument {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.status-bar .instrument strong {
+  color: var(--on-surface);
+  font-weight: 700;
+}
+
+.status-bar .spacer {
+  flex: 1;
+}
+
+.last-price {
+  font: 600 20px/24px var(--font-mono);
+  color: var(--on-surface);
+}
+
+.stat strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.status-bar .stat {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: baseline;
+  color: var(--on-surface-muted);
+}
+
+.status-bar .stat strong {
+  font: 500 12px/16px var(--font-mono);
+  color: var(--on-surface-variant);
+}
+
+.status-bar .stat strong.up {
+  color: var(--up);
+}
+
+.status-bar .stat strong.down {
+  color: var(--down);
+}
+
+.status-bar .stat.error {
+  color: var(--error);
+}
+
+.status-bar .regimes {
+  gap: var(--space-8);
+}
+
+.feed-line {
+  margin-left: auto;
+  font: 400 11px/16px var(--font-mono);
+  color: var(--on-surface-muted);
+  white-space: nowrap;
+}
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* The status bar's chips: 20px, mono 700; the filled one is the feed status, the outlined one the provenance. */
+.status-bar .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-8);
+  border: 1px solid transparent;
+  font: 700 12px/16px var(--font-mono);
+  white-space: nowrap;
+}
+
+.chip-live {
+  background: var(--status-live);
+  color: var(--on-status-live);
+}
+
+.chip-replay {
+  background: var(--status-replay);
+  color: var(--on-status-replay);
+}
+
+.chip-simulated {
+  background: var(--status-simulated);
+  color: var(--on-status-simulated);
+}
+
+.chip-degraded {
+  background: var(--status-degraded);
+  color: var(--on-status-degraded);
+}
+
+.chip-bad {
+  background: var(--status-bad);
+  color: var(--on-status-bad);
+}
+
+.chip-outline {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+.status-bar .chip-outline {
+  border-color: currentColor;
+}
+
+.chip-outline.chip-live {
+  color: var(--status-live-text);
+}
+
+.chip-outline.chip-replay {
+  color: var(--status-replay-text);
+}
+
+.chip-outline.chip-simulated {
+  color: var(--status-simulated);
+}
+
+.chip-outline.chip-bad {
+  color: var(--error);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-muted);
+  font: 500 11px/16px var(--font-sans);
+  white-space: nowrap;
+}
+
+.pill-open {
+  color: var(--status-live-text);
+  border-color: var(--status-live);
+}
+
+.hub-state {
+  font: 500 11px/16px var(--font-sans);
+}
+
+.hub {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.hub::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hub-connected {
+  color: var(--status-live-text);
+}
+
+.hub-connecting,
+.hub-reconnecting {
+  color: var(--status-simulated);
+}
+
+.hub-disconnected {
+  color: var(--error);
+}
+
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.segmented legend {
+  float: left;
+  padding: 0 var(--space-6) 0 0;
+  font-size: 11px;
+  line-height: var(--control-height);
+  color: var(--on-surface-muted);
+}
+
+.segmented.small button {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-6);
+  font-size: 11px;
+}
+
+.panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-head h2 {
+  margin: 0 0 4px;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contrast input {
+  width: 90px;
+}
+
+.placeholder {
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: var(--on-surface-muted);
+  font-size: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Workspace: the time-aligned chart column and the side panels. */
+.workspace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-content: stretch;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The basis is what makes the side column wrap under the charts below 900px: 592 + 300 + the 8px gap is 900. */
+.chart-column {
+  position: relative;
+  display: flex;
+  flex: 1 1 592px;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Always visible, beside the charts. It scrolls inside itself, so a tall stack never grows the page. */
+.side-column {
+  display: flex;
+  flex: 0 0 300px;
+  flex-direction: column;
+  gap: var(--space-8);
+  /* A wrapping row's line is as tall as its tallest item: unbounded, the column grew to its content and was clipped. */
+  max-height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-8) var(--space-8) 0;
+}
+
+.ld-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+}
+
+.ld-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-4);
+  color: var(--on-surface);
+  font: 600 12px/16px var(--font-sans);
+}
+
+/* Each section folds to its heading, saved with the layout. */
+.ld-panel.collapsed .ld-panel-title {
+  margin-bottom: 0;
+}
+
+/* A flex column, as the panel is, so the content lays out unchanged; the [hidden] rule beats the flex display. */
+.ld-panel-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ld-panel-body[hidden] {
+  display: none;
+}
+
+.ld-fold {
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--space-4);
+  width: 100%;
+  height: auto;
+  min-height: 24px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.ld-fold:hover {
+  border-color: transparent;
+}
+
+.ld-fold-mark {
+  flex: none;
+  width: 12px;
+  color: var(--on-surface-muted);
+}
+
+.ld-fold-title {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.ld-up { color: var(--up); }
+.ld-down { color: var(--down); }
+
+.ld-dom-mark {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--bid);
+  border-radius: var(--radius-xs);
+  color: var(--bid);
+  font: 600 10px/12px var(--font-sans);
+  letter-spacing: 0.04em;
+}
+
+.ld-ladder-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.ld-ladder {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 11px/16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-ladder th {
+  position: sticky;
+  top: 0;
+  padding: 0 var(--space-4);
+  background: var(--surface-container);
+  color: var(--on-surface-muted);
+  font-weight: 400;
+}
+
+.ld-ladder td {
+  height: var(--ladder-row);
+  padding: 0 var(--space-4);
+}
+
+.ld-ladder .qty {
+  position: relative;
+  width: 36%;
+}
+
+.ld-ladder .qty.bid { text-align: right; }
+.ld-ladder .qty .num { position: relative; }
+
+.ld-ladder .bar {
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  border-radius: var(--radius-xs);
+  opacity: var(--opacity-depth-bar);
+}
+
+.ld-ladder .bar-bid { right: 0; background: var(--bid); }
+.ld-ladder .bar-ask { left: 0; background: var(--ask); }
+.ld-ladder .price { text-align: center; color: var(--on-surface); }
+.ld-ladder .bid-price { color: var(--bid-strong); }
+.ld-ladder .ask-price { color: var(--ask-strong); }
+.ld-ladder tr.best td { background: var(--highlight-best); font-weight: 700; }
+.ld-ladder .marks { width: 32px; color: var(--last-price); }
+
+.ld-ladder tr.spread td {
+  text-align: center;
+  color: var(--on-surface-muted);
+  border-block: 1px dashed var(--outline);
+}
+
+.ld-metrics {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px var(--space-12);
+  margin: 0 0 var(--space-4);
+  font: 400 11px/16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-metrics dt { color: var(--on-surface-muted); }
+.ld-metrics dd { margin: 0; text-align: right; }
+
+.ld-imbalance-read {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font: 400 11px/16px var(--font-mono);
+}
+
+.ld-imbalance {
+  position: relative;
+  display: inline-block;
+  width: 72px;
+  height: 8px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-highest);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.ld-imbalance > span { position: absolute; top: 0; bottom: 0; }
+.ld-imbalance .bid { left: 0; background: var(--bid); }
+.ld-imbalance .ask { right: 0; background: var(--ask); }
+
+.ld-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ld-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.ld-signal {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0 var(--space-8);
+  align-items: baseline;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--surface-high);
+}
+
+.ld-signal .kind { font: 700 12px/16px var(--font-mono); text-transform: uppercase; }
+.ld-signal .when { color: var(--on-surface-muted); font: 400 11px/16px var(--font-mono); }
+
+.ld-signal .detail {
+  grid-column: 1 / -1;
+  color: var(--on-surface-variant);
+  font: 400 11px/15px var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.ld-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--on-surface-muted);
+  align-self: center;
+}
+
+.ld-signal--bullish .ld-dot { background: var(--bias-bullish); }
+.ld-signal--bullish .kind { color: var(--bias-bullish); }
+.ld-signal--bearish .ld-dot { background: var(--bias-bearish); }
+.ld-signal--bearish .kind { color: var(--bias-bearish); }
+.ld-signal--neutral .ld-dot { background: var(--bias-neutral); }
+.ld-signal--neutral .kind { color: var(--bias-neutral); }
+
+.ld-level {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--on-surface-variant);
+  font: 400 11px/16px var(--font-mono);
+}
+
+.ld-level::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--reference);
+}
+
+.ld-level-support::before { background: var(--support); }
+.ld-level-resistance::before { background: var(--resistance); }
+.ld-level .ld-level-type { color: var(--on-surface-muted); font-family: var(--font-sans); text-transform: lowercase; }
+.ld-level .kind { min-width: 72px; color: var(--on-surface-muted); font-family: var(--font-sans); }
+
+.ld-panel.profile .pane-canvas {
+  flex: none;
+  height: 220px;
+}
+
+/* Over the main chart when the server holds no depth for the product: says why the heatmap is empty. */
+.depth-note {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-chart-overlay);
+  margin: 0;
+  padding: 1px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--scrim-tooltip);
+  box-shadow: var(--elevation-2);
+  color: var(--on-surface-muted);
+  pointer-events: none;
+}
+
+.pane {
+  position: relative;
+  min-height: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  display: flex;
+}
+
+.pane-main {
+  flex: 5 1 0;
+  min-height: 220px;
+}
+
+.pane-fill {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.pane-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pane-canvas canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.pane-overlay {
+  cursor: crosshair;
+}
+
+.pane-overlay-interactive {
+  touch-action: none;
+}
+
+.chart-surface:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.chart-keys,
+.chart-readout {
+  position: absolute;
+  z-index: var(--z-chart-overlay);
+  margin: 0;
+  max-width: min(440px, 46%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--scrim-chart);
+  box-shadow: var(--elevation-2);
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.chart-keys {
+  top: 4px;
+  right: 8px;
+  display: none;
+  color: var(--on-surface-muted);
+}
+
+.chart-surface:focus-visible .chart-keys {
+  display: block;
+}
+
+.chart-readout {
+  left: 8px;
+  bottom: 24px;
+  color: var(--on-surface-variant);
+}
+
+.tooltip {
+  position: absolute;
+  z-index: var(--z-chart-overlay);
+  max-width: 300px;
+  padding: 6px 8px;
+  background: var(--scrim-tooltip);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elevation-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.tooltip-title {
+  color: var(--on-surface);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.panel {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface-container);
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll {
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Depth ladder */
+/* Profile and TPO */
+.tpo-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.indicator-panel .tpo-rows {
+  flex: 1 1 0;
+}
+
+.tpo-rows li {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.tpo-rows li.poc {
+  outline: 1px solid var(--poc);
+}
+
+.tpo-rows li.single {
+  background: var(--highlight-single);
+}
+
+.tpo-price {
+  color: var(--on-surface-muted);
+  min-width: 56px;
+  text-align: right;
+}
+
+.tpo-letters {
+  color: var(--tpo-letter);
+  letter-spacing: 0.06em;
+}
+
+/* Liquidity, tabs, signals, layers, overlay */
+table.compact {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+table.compact th,
+table.compact td {
+  padding: 0 4px;
+  text-align: right;
+  font-weight: normal;
+}
+
+table.compact thead th,
+table.compact tbody th {
+  color: var(--on-surface-muted);
+}
+
+.imbalance {
+  position: relative;
+  display: inline-block;
+  width: 70px;
+  height: 8px;
+  background: var(--surface-high);
+}
+
+.imbalance > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.imbalance-bid {
+  background: var(--bid);
+}
+
+.imbalance-ask {
+  background: var(--ask);
+}
+
+fieldset {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  margin: 0 0 6px;
+  padding: 4px 6px;
+}
+
+legend {
+  color: var(--on-surface-muted);
+  padding: 0 4px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  min-height: var(--control-height);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.toggle input {
+  accent-color: var(--primary);
+}
+
+.toggle-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.kind-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8px;
+}
+
+.rationale {
+  white-space: pre-wrap;
+  background: var(--surface-high);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* Product picker: every product's summary, the watchlist first; collapsible to one line.
+   The cap is the panel's, and the rows scroll inside it, so the chart row keeps the rest of the viewport. */
+.products {
+  display: flex;
+  flex-direction: column;
+  max-height: 32vh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 4px 10px;
+}
+
+.products.collapsed {
+  max-height: none;
+  background: var(--surface-low);
+  border-radius: 0;
+}
+
+/* Chart toolbar (Detail and Order Flow): every chart control in one wrapping row; Live is filled, the saved-layout
+   note sits at the right. */
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6) var(--space-12);
+  padding: var(--space-6) var(--space-12);
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.chart-toolbar .contrast input {
+  accent-color: var(--primary);
+}
+
+.chart-toolbar .layout-saved {
+  margin-left: auto;
+}
+
+.products-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.products-head input {
+  width: 180px;
+}
+
+.products-head .products-filter {
+  margin-left: auto;
+}
+
+.products .collapse {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+.quick-list {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.quick-list button {
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.quick-list .watch-star {
+  color: var(--last-price);
+}
+
+.products .scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 4px;
+  overflow: auto;
+}
+
+.products-table th,
+.products-table td {
+  white-space: nowrap;
+}
+
+.products-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-container);
+}
+
+.products-table tr.group th {
+  text-align: left;
+  padding-top: 4px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.products-table td.product {
+  text-align: left;
+  max-width: 260px;
+}
+
+.products-table .select {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 260px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.products-table .select[aria-pressed="true"] {
+  background: var(--primary-container);
+  border-color: var(--primary);
+}
+
+.products-table .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.products-table tr.active td {
+  background: var(--surface-high);
+}
+
+.star.star-refused,
+.star.star-refused[aria-pressed="true"] {
+  color: var(--status-simulated);
+}
+
+.chip-small {
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.dom-mark {
+  padding: 0 3px;
+  border: 1px solid var(--bid);
+  border-radius: var(--radius-xs);
+  color: var(--bid);
+  font-size: 10px;
+}
+
+.dir-up {
+  color: var(--up);
+}
+
+.dir-down {
+  color: var(--down);
+}
+
+/* Overview: every product in one sortable table. */
+.overview {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 6px 10px;
+  background: var(--surface-container);
+}
+
+.overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-16);
+  margin-bottom: var(--space-8);
+}
+
+/* headline-sm: the heading, with the product count muted beside it. */
+.overview-head h2 {
+  margin: 0;
+  font: 600 18px/24px var(--font-sans);
+  color: var(--on-surface);
+}
+
+.overview-head h2 .muted {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The feed-status counts, only the states present. */
+.overview-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overview-status .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+  margin-bottom: var(--space-8);
+}
+
+.overview-filters input {
+  width: 220px;
+}
+
+/* The table's box: it scrolls sideways inside it on a narrow window. */
+.overview-box {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+
+.overview-table {
+  margin-bottom: 0;
+  font: 400 11px/16px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-table td {
+  height: 24px;
+  padding: 0 var(--space-6);
+}
+
+.overview-table tbody tr {
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.overview-table tbody tr:hover td {
+  background: var(--state-hover);
+}
+
+/* The open product's row. */
+.overview-table tbody tr.active td {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.overview-table tbody tr.active .select,
+.overview-table tbody tr.active .root,
+.overview-table tbody tr.active .name {
+  color: var(--on-primary-container);
+}
+
+.overview-table thead th {
+  padding: 0;
+  border-bottom: 1px solid var(--outline);
+}
+
+.overview-table .star-cell {
+  width: var(--control-height);
+  padding: 0;
+  text-align: center;
+}
+
+.overview-table .select {
+  color: var(--on-surface);
+  font-family: var(--font-sans);
+}
+
+.overview-table .root {
+  margin-right: var(--space-6);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.overview-table .name {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  color: var(--on-surface-variant);
+}
+
+/* Group headings: label-sm, uppercase, with the count. */
+.overview-table tr.group th {
+  padding: var(--space-8) var(--space-6) var(--space-4);
+  font: 600 11px/16px var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-surface-muted);
+}
+
+.overview-table tr.group .count {
+  margin-left: var(--space-6);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.overview-table .sort {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-6);
+  border-color: transparent;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font: inherit;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.overview-table .sort:hover {
+  color: var(--on-surface);
+}
+
+.overview-table th[aria-sort="ascending"] .sort,
+.overview-table th[aria-sort="descending"] .sort {
+  color: var(--on-surface);
+  font-weight: 600;
+}
+
+/* The sort arrow in the accent. */
+.overview-table th[aria-sort] .sort > span {
+  color: var(--primary);
+}
+
+.overview-table th:nth-child(2) .sort {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.overview-table .signal-cell {
+  text-align: left;
+}
+
+/* Regimes: up and down in the price colours, range in the accent, unclear amber, warming muted. */
+.regime {
+  font: 500 12px/16px var(--font-mono);
+  white-space: nowrap;
+}
+
+.regime-up {
+  color: var(--up);
+}
+
+.regime-down {
+  color: var(--down);
+}
+
+.regime-range {
+  color: var(--primary);
+}
+
+.regime-unclear {
+  color: var(--status-simulated);
+}
+
+.regime-warming,
+.regime-none {
+  color: var(--on-surface-muted);
+}
+
+.regimes {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.agreement {
+  font-family: var(--font-mono);
+}
+
+.agreement-agree {
+  color: var(--up);
+}
+
+.agreement-conflict {
+  color: var(--ask);
+}
+
+.agreement-mixed {
+  color: var(--on-surface-muted);
+}
+
+/* The ?perf=1 probe's readout. */
+.perf-overlay {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 10;
+  padding: 2px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* A narrow window: the side panels go under the charts. */
+@media (max-width: 900px) {
+  .app {
+    height: auto;
+  }
+
+  .view,
+  .view > .workspace,
+  .view > .instrument-panel,
+  .overview {
+    flex: none;
+    overflow: visible;
+  }
+
+  .instrument-panel {
+    overflow: visible;
+  }
+
+  html,
+  body,
+  #root {
+    overflow: auto;
+  }
+
+  .workspace {
+    overflow: visible;
+  }
+
+  .chart-column {
+    height: 90vh;
+    overflow: hidden;
+  }
+
+  .side-column {
+    flex: 1 1 100%;
+    max-height: none;
+    overflow: visible;
+    padding: 0 var(--space-8) var(--space-8);
+  }
+}
+
+/* The API key prompt (ARCHITECTURE.md D-30). The clear control floats so the chart's 100vh frame is unchanged. */
+.key-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.key-gate form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(28rem, 100%);
+}
+
+.key-gate input {
+  height: 32px;
+  padding: 0 var(--space-8);
+}
+
+.key-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.key-clear {
+  position: fixed;
+  top: 6px;
+  right: 8px;
+  z-index: 5;
+}
+
+/* A waiting service worker. Fixed so the chart's frame does not move, and so the tab is not reloaded. */
+.update-banner {
+  position: fixed;
+  z-index: 40;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+}
+
+.update-banner p {
+  margin: 0;
+  flex: 1;
+}
+
+/* The native shell's server URL screen. The browser build never shows it. */
+.server-url-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: auto;
+  background: var(--surface);
+  padding: 32px 16px;
+}
+
+.server-url-card {
+  width: min(440px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.server-url-card h1 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--on-surface);
+}
+
+.server-url-card p {
+  margin: 0;
+}
+
+.server-url-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.server-url-card input[type="url"] {
+  height: 32px;
+  padding: 0 var(--space-8);
+}
+
+.server-url-check {
+  flex-direction: row;
+  align-items: center;
+  font-weight: 600;
+}
+
+.server-url-warning {
+  color: var(--danger);
+}
+
+.server-url-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The hint: one sentence under a control, on scrim-tooltip, shown on hover, on focus and from the touch toggle (D-47).
+   The wrapper takes no space of its own, so it adds no gap to a flex row. On touch a joined group's toggles sit after
+   its last button, outside the joined strip. */
+.hint {
+  display: contents;
+}
+
+.hint-tip {
+  position: fixed;
+  z-index: var(--z-probe);
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 260px;
+  padding: var(--space-6) var(--space-8);
+  background: var(--scrim-tooltip);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elevation-2);
+  color: var(--on-surface);
+  font: 400 11px/15px var(--font-sans);
+  pointer-events: none;
+  white-space: normal;
+}
+
+.hint-tip[hidden] {
+  display: none;
+}
+
+/* The touch toggle is out of sight where a pointer can hover and a keyboard can focus. */
+.hint-toggle {
+  display: none;
+  height: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--on-surface-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .hint-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Inside a joined group the toggle is not one of its buttons: it follows the strip, square-cornered rules and the
+   overlap of the group's buttons do not reach it. Declared last so it wins the tie on specificity. */
+.bookmap-controls fieldset button.hint-toggle,
+.segmented button.hint-toggle {
+  order: 1;
+  margin-left: var(--space-2);
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
