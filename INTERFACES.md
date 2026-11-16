@@ -244,7 +244,7 @@ sequenceDiagram
   loop every Api:PublishMs (250 ms)
     P-->>B: delta (seq N+1, N+2, …)
   end
-  Note over B: drop deltas with seq ≤ N; a gap in seq: take a new snapshot
+  Note over B: drop deltas with seq ≤ N, and on a gap in seq take a new snapshot
 ```
 
 **Ordering.** The connection joins the group before the snapshot is taken, so no later delta is missed; the client
