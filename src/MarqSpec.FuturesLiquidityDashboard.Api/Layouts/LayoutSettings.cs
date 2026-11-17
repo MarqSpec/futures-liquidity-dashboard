@@ -198,8 +198,9 @@ public sealed record LayoutSettings
     private string _eventDotSize = "medium";
 
     /// <summary>
-    /// When true, the Order Flow price scale stays centered on the last trade at the current zoom (REQUIREMENTS.md FR-67).
-    /// A vertical drag or a price zoom turns it off in the client.
+    /// When true, the Order Flow and Detail price charts keep the last trade in the middle at the current zoom: Lock, one
+    /// setting for both tabs (REQUIREMENTS.md FR-67, FR-68; ARCHITECTURE.md D-54).
+    /// A vertical drag, a price zoom or Fit turns it off in the client.
     /// A PUT that omits the property keeps the stored value. An explicit value, including false, replaces it.
     /// </summary>
     public bool CenterPrice

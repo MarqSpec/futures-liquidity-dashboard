@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import type { Profile } from "../api/schemas.ts";
 import { formatLocalMinute, formatPercent, formatQty, formatTicks, type TickSpec } from "../domain/format.ts";
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
-import { useCanvasTheme } from "../hooks/useCanvasTheme.ts";
+import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { drawProfile } from "./drawProfile.ts";
@@ -26,9 +26,9 @@ export function ProfilePanel({ profiles, windows, selected, onSelect, spec, last
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { width, height } = useElementSize(wrapRef);
-  // Read so the panel re-renders, and redraws, once the canvas fonts load and when the theme changes.
+  // Read so the panel re-renders, and redraws, once the canvas fonts load and when the theme or a chart colour changes.
   useCanvasFontEpoch();
-  useCanvasTheme();
+  useCanvasPalette();
   const profile = profiles.find((p) => p.window === selected) ?? null;
 
   useEffect(() => {

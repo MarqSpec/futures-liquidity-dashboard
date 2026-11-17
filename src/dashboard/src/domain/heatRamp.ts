@@ -1,6 +1,5 @@
 import { rgbChannels } from "../design/color.ts";
-import { color } from "../design/tokens.ts";
-import { perTheme } from "../theme.ts";
+import { perTheme, themeColor } from "../theme.ts";
 
 /**
  * Bookmap-style ramp for resting quantity (REQUIREMENTS.md FR-58). The stops are the active theme's heat-0 … heat-100 tokens:
@@ -17,7 +16,7 @@ const STOP_TOKENS = [
 ] as const;
 
 const stops = perTheme((theme): readonly (readonly [number, number, number, number])[] =>
-  STOP_TOKENS.map(([at, name]) => [at, ...rgbChannels(color(name, theme))] as const),
+  STOP_TOKENS.map(([at, name]) => [at, ...rgbChannels(themeColor(name, theme))] as const),
 );
 
 /** RGB at `t` in 0..1 along the ramp. */

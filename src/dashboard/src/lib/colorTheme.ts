@@ -1,6 +1,6 @@
 import type { ThemeId } from "../design/tokenFile.ts";
-import { color } from "../design/tokens.ts";
-import { canvasTheme } from "../theme.ts";
+import { applyDocumentChartColors, canvasTheme, themeColor } from "../theme.ts";
+import { chartColorStore } from "./chartColorOverrides.ts";
 
 // The viewer's theme: Terminal (dark) or Light. With no stored choice it follows the OS light/dark setting, live; a
 // choice is kept in this browser only, under one localStorage key, never in the saved layout or on the server.
@@ -129,7 +129,7 @@ export function applyDocumentTheme(doc: Document, theme: ThemeId): void {
     meta.name = "theme-color";
     doc.head.append(meta);
   }
-  meta.content = color("surface", theme);
+  meta.content = themeColor("surface", theme);
 }
 
 /** The app's theme: the browser's localStorage and OS setting, applied to the page and the canvases together. */
@@ -138,6 +138,14 @@ export const colorTheme: ColorTheme = createColorTheme({
   media: () => globalThis.matchMedia?.(LIGHT_SCHEME_QUERY),
   apply: (theme) => {
     canvasTheme.set(theme);
-    if (typeof document !== "undefined") applyDocumentTheme(document, theme);
+    if (typeof document !== "undefined") {
+      applyDocumentTheme(document, theme);
+      applyDocumentChartColors(document, theme);
+    }
   },
+});
+
+// A changed chart colour restyles the page at once; the canvases repaint through canvasTheme.
+chartColorStore.subscribe(() => {
+  if (typeof document !== "undefined") applyDocumentChartColors(document, canvasTheme.current());
 });

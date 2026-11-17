@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { SignalKind } from "../api/schemas.ts";
-import { clampPriceShift, shiftPriceRange, zoomPriceAbout } from "../domain/bookmap.ts";
+import { clampPriceShift, shiftPriceRange } from "../domain/bookmap.ts";
 import { aggregateCandles } from "../domain/candles.ts";
 import { formatTicks } from "../domain/format.ts";
 import { aggregateHeat } from "../domain/heat.ts";
@@ -15,15 +15,18 @@ import {
   type SideSectionId,
 } from "../domain/layout.ts";
 import { indicatorsForViewer, type MarketState } from "../domain/merge.ts";
+import { lastPriceAnchor } from "../domain/priceLock.ts";
 import { fitRange, zoomRange } from "../domain/scale.ts";
 import { clampWindow, LIVE_EDGE_PAD, panOffsetMs, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
 import type { CrosshairStore } from "../hooks/crosshair.ts";
+import { usePriceControls } from "../hooks/usePriceControls.ts";
 import { DomLadder } from "./DomLadder.tsx";
 import { IndicatorDock } from "./IndicatorDock.tsx";
 import { LayersPanel } from "./LayersPanel.tsx";
 import { LiquidityPanel } from "./LiquidityPanel.tsx";
 import { MainChart } from "./MainChart.tsx";
 import { OverlayPanel } from "./OverlayPanel.tsx";
+import { PriceControls } from "./PriceControls.tsx";
 import { ProfilePanel } from "./ProfilePanel.tsx";
 import type { SideFold } from "./SidePanel.tsx";
 import { SignalsPanel } from "./SignalsPanel.tsx";
@@ -56,6 +59,8 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
   const historyRef = useRef(market.historyMinutes * 60_000);
   const fittedSpanRef = useRef(1);
   const priceShiftRef = useRef(0);
+  const zoomedRef = useRef({ low: 0, high: 1 });
+  const anchorRef = useRef<number | null>(null);
   const rootRef = useRef(market.root);
   const [priceShift, setPriceShift] = useState<{ root: string; ticks: number } | null>(null);
   const [trackedRoot, setTrackedRoot] = useState(market.root);
@@ -99,9 +104,12 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
   const fittedSpan = Math.max(1, fitted.high - fitted.low);
   const zoomed = zoomRange(fitted.low, fitted.high, view.priceZoom);
   const range = shiftPriceRange(zoomed, clampPriceShift(shiftTicks, zoomed.high - zoomed.low));
+  const anchorTicks = lastPriceAnchor(market.prints, candles);
   useLayoutEffect(() => {
     historyRef.current = historyMs;
     fittedSpanRef.current = fittedSpan;
+    zoomedRef.current = zoomed;
+    anchorRef.current = anchorTicks;
     if (rootRef.current !== market.root) {
       rootRef.current = market.root;
       priceShiftRef.current = 0;
@@ -130,15 +138,26 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     commitWindow({ ...current, spanMs: next.spanMs, offsetMs: next.offsetMs });
     return true;
   };
-  const zoomPrice = (factor: number) => {
-    const current = windowRef.current;
-    // A vertical drag is a shift on this zoom, so a later notch still goes through the clamp.
-    // — midpoint here; Order Flow uses the pointer (D-38).
-    const next = zoomPriceAbout(current.priceZoom, priceShiftRef.current, fittedSpanRef.current, 0.5, factor);
-    priceShiftRef.current = next.shiftTicks;
-    setPriceShift(next.shiftTicks === 0 ? null : { root: rootRef.current, ticks: next.shiftTicks });
-    commitWindow({ ...current, priceZoom: next.priceZoom });
-  };
+  // +, −, Fit, Center and Lock, shared with Order Flow. Every Detail price zoom (the buttons, the keys,
+  // Shift+wheel and a pinch) is `zoomBy`: about the midpoint, through the clamp after a drag, and it releases Lock.
+  // — midpoint here; the Order Flow wheel uses the pointer (D-38).
+  const priceActions = usePriceControls({
+    locked: layout.centerPrice,
+    onReading,
+    scene: () => ({
+      zoomed: zoomedRef.current,
+      fittedSpan: fittedSpanRef.current,
+      priceZoom: windowRef.current.priceZoom,
+      shiftTicks: priceShiftRef.current,
+      anchorTicks: anchorRef.current,
+    }),
+    setShift: (ticks) => {
+      priceShiftRef.current = ticks;
+      setPriceShift(ticks === 0 ? null : { root: rootRef.current, ticks });
+    },
+    setZoom: (priceZoom) => commitWindow({ ...windowRef.current, priceZoom }),
+    resetWindow: onResetWindow,
+  });
   const pan = (deltaMs: number) => {
     const current = windowRef.current;
     // The chart already scaled the drag into milliseconds. Passing the span as the width adds that many milliseconds.
@@ -150,11 +169,6 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     const ticks = clampPriceShift(priceShiftRef.current + deltaTicks, span);
     priceShiftRef.current = ticks;
     setPriceShift({ root: rootRef.current, ticks });
-  };
-  const resetView = () => {
-    priceShiftRef.current = 0;
-    setPriceShift(null);
-    onResetWindow();
   };
 
   const enabledProfiles: string[] = profileWindows.filter(([, id]) => paneOn(id)).map(([w]) => w);
@@ -175,6 +189,9 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
             Trades and quotes only: no depth for this product right now
           </p>
         )}
+        <div className="chart-price-controls" role="toolbar" aria-label="Detail price controls">
+          <PriceControls locked={layout.centerPrice} canCenter={anchorTicks != null} actions={priceActions} />
+        </div>
         <MainChart
           model={{
             market: chartMarket,
@@ -209,10 +226,12 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
           crosshair={crosshair}
           summary={`${spec.name} ${market.status.provenance.toLowerCase()} chart, ${lastPriceText}, ${candles.length} ${layout.chartMinutes}-minute candles`}
           onZoomTime={zoomTime}
-          onZoomPrice={zoomPrice}
+          onZoomPrice={priceActions.zoomBy}
           onPan={pan}
           onPanPrice={panPrice}
-          onReset={resetView}
+          onReset={priceActions.fit}
+          priceLocked={layout.centerPrice}
+          onReleaseLock={priceActions.releaseLock}
         />
         <IndicatorDock
           market={market}

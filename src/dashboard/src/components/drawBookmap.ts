@@ -1,7 +1,7 @@
 import type { HeatColumn } from "../api/schemas.ts";
 import type { Candle } from "../domain/candles.ts";
 import { withAlpha } from "../design/color.ts";
-import { color } from "../design/tokens.ts";
+import { BOOKMAP_STAGE, WARMUP_BAND_ALPHA } from "../design/contrastFloors.ts";
 import {
   priceSegments,
   WARMUP_NO_L2,
@@ -27,55 +27,49 @@ import type { HeatMode } from "../domain/layout.ts";
 import { niceTicks, timeTicks } from "../domain/scale.ts";
 import { eventMarker } from "../domain/signals.ts";
 import { labelBox, type Surface } from "../lib/canvas.ts";
-import { colors, fonts, orderFlowFonts, themed } from "../theme.ts";
+import { colors, fonts, orderFlowFonts, themeColor, themed } from "../theme.ts";
+import { strokeVolumeDotOutline } from "./volumeDotOutline.ts";
 
 const HEAT_LEVELS = 8;
 
-/** The token the Order Flow plot is painted on before anything else: the ground under the warmup band. */
-export const BOOKMAP_STAGE = "surface-lowest";
-
-/**
- * The warmup band is `warmup` at this alpha over the stage. The warmup candles, the dashed price step, the watermark
- * edge, the no-L2 caption and every guide drawn across it sit on that composite, so it is held to NFR-8's floors.
- * Was 0.28, which left `warmup` itself at 2.99:1 and 2.95:1 on it.
- */
-export const WARMUP_BAND_ALPHA = 0.25;
+// The stage and the warmup band alpha are NFR-8 inputs, so they live with the contrast floors.
+export { BOOKMAP_STAGE, WARMUP_BAND_ALPHA };
 
 // Every colour on the Order Flow canvas is a design token, in the active canvas theme, the D-40 price line and its
-// halos included.
+// halos included, read through the viewer's chart colours.
 const palette = themed((theme) => ({
-  stage: color(BOOKMAP_STAGE, theme),
-  dock: color("surface-low", theme),
-  card: color("surface-container", theme),
-  strong: color("on-surface", theme),
-  text: color("on-surface-variant", theme),
-  muted: color("on-surface-muted", theme),
-  crosshair: color("crosshair", theme),
-  up: color("up", theme),
-  down: color("down", theme),
-  bid: color("bid", theme),
-  ask: color("ask", theme),
-  buy: color("aggressor-buy", theme),
-  sell: color("aggressor-sell", theme),
-  warmup: color("warmup", theme),
-  hvn: color("node-hvn", theme),
-  lvn: color("node-lvn", theme),
-  neutral: color("node-neutral", theme),
-  poc: color("poc", theme),
-  vwap: color("vwap", theme),
-  value: color("value-area", theme),
-  dotLabel: color("dot-label", theme),
-  dotLabelHalo: color("dot-label-halo", theme),
-  guideCaption: color("guide-caption", theme),
-  guideFill: color("guide-fill", theme),
-  guideText: color("guide-text", theme),
-  priceTag: color("price-tag", theme),
-  onPriceTag: color("on-price-tag", theme),
+  stage: themeColor(BOOKMAP_STAGE, theme),
+  dock: themeColor("surface-low", theme),
+  card: themeColor("surface-container", theme),
+  strong: themeColor("on-surface", theme),
+  text: themeColor("on-surface-variant", theme),
+  muted: themeColor("on-surface-muted", theme),
+  crosshair: themeColor("crosshair", theme),
+  up: themeColor("up", theme),
+  down: themeColor("down", theme),
+  bid: themeColor("bid", theme),
+  ask: themeColor("ask", theme),
+  buy: themeColor("aggressor-buy", theme),
+  sell: themeColor("aggressor-sell", theme),
+  warmup: themeColor("warmup", theme),
+  hvn: themeColor("node-hvn", theme),
+  lvn: themeColor("node-lvn", theme),
+  neutral: themeColor("node-neutral", theme),
+  poc: themeColor("poc", theme),
+  vwap: themeColor("vwap", theme),
+  value: themeColor("value-area", theme),
+  dotLabel: themeColor("dot-label", theme),
+  dotLabelHalo: themeColor("dot-label-halo", theme),
+  guideCaption: themeColor("guide-caption", theme),
+  guideFill: themeColor("guide-fill", theme),
+  guideText: themeColor("guide-text", theme),
+  priceTag: themeColor("price-tag", theme),
+  onPriceTag: themeColor("on-price-tag", theme),
   /** The last-price step: light over a dark halo in Terminal, dark over a light halo in Light. */
-  priceLine: color("price-line", theme),
-  priceLineHalo: color("price-line-halo", theme),
+  priceLine: themeColor("price-line", theme),
+  priceLineHalo: themeColor("price-line-halo", theme),
   /** The halo under the dashed warmup stretch of the same step. */
-  priceLineHaloWarmup: color("price-line-halo-warmup", theme),
+  priceLineHaloWarmup: themeColor("price-line-halo-warmup", theme),
 }));
 
 /** label-sm: column heads and the CVD overline, set in capitals. */
@@ -477,6 +471,7 @@ function drawDots(
       ctx.closePath();
       ctx.fill();
     }
+    strokeVolumeDotOutline(ctx, x, y, dot.radius, dot.buyFraction);
     if (dot.label) {
       // A five-glyph total is wider than the dot; the halo keeps the overflow readable on the stage.
       const text = formatQty(dot.total);

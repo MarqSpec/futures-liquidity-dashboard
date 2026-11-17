@@ -364,6 +364,8 @@ describe("BookmapView price zoom and vertical drag", () => {
       />,
     );
     const zoomIn = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -40, clientX: 120, clientY: 200 });
+    // After the wheel pauses, so the page scroll above does not carry on into this notch (D-53).
+    Object.defineProperty(zoomIn, "timeStamp", { value: zoomOut.timeStamp + 1_000 });
     screen.getByTitle(/Shift\+wheel zooms price/).dispatchEvent(zoomIn);
     expect(zoomIn.defaultPrevented).toBe(false);
     expect(zoomedIn).toBe(0);
@@ -589,5 +591,107 @@ describe("BookmapView price zoom and vertical drag", () => {
     fireEvent.pointerMove(stage, { pointerId: 2, clientX: 420, clientY: 260 });
     expect(lock()).toBe("false");
     expect(priceZoom).not.toBe(1);
+  });
+});
+
+describe("BookmapView wheel while the page scrolls", () => {
+  // The stage's box on screen. jsdom lays nothing out, so the test places it.
+  function placeStage(stage: HTMLElement, top: number): void {
+    vi.spyOn(stage, "getBoundingClientRect").mockImplementation(
+      () => ({ x: 0, y: top, left: 0, top, right: 800, bottom: top + 600, width: 800, height: 600, toJSON: () => ({}) }) as DOMRect,
+    );
+  }
+
+  // Positions inside the stage: the plot, the PRICE column and the time strip.
+  function wheelOn(stage: HTMLElement, x: number, y: number, timeStamp: number, shiftKey = false): WheelEvent {
+    const top = stage.getBoundingClientRect().top;
+    const event = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -40, shiftKey, clientX: x, clientY: top + y });
+    Object.defineProperty(event, "timeStamp", { value: timeStamp });
+    stage.dispatchEvent(event);
+    return event;
+  }
+
+  it.each([
+    ["a plain wheel on the plot", 120, 200, false],
+    ["Shift+wheel on the plot", 120, 200, true],
+    ["a wheel on the PRICE column", 560, 200, false],
+    ["a wheel on the time strip", 120, 500, false],
+  ])("should let the page scroll and leave the window alone when %s lands on a plot cut off by the bottom of the viewport", (_name, x, y, shiftKey) => {
+    const onWindow = vi.fn();
+    const { stage } = renderView(onWindow);
+    placeStage(stage, window.innerHeight - 200);
+
+    const event = wheelOn(stage, x, y, 1_000, shiftKey);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onWindow).not.toHaveBeenCalled();
+  });
+
+  it("should say in the hint and the stage title that the wheel scrolls a page that can scroll while the plot is cut off", () => {
+    sessionStorage.clear();
+    const { stage } = renderView();
+    const rule = /while the page can scroll and the plot is cut off, the wheel scrolls the page first/;
+
+    expect(stage.title).toMatch(rule);
+    expect(stage.querySelector(".bookmap-hint")?.textContent).toMatch(rule);
+  });
+
+  it("should zoom as before on a cut-off plot when the page cannot scroll", () => {
+    // The wide layout: html, body and #root are overflow hidden, so letting the wheel through would do nothing.
+    document.documentElement.style.overflow = "hidden";
+    try {
+      const onWindow = vi.fn();
+      const { stage } = renderView(onWindow);
+      placeStage(stage, window.innerHeight - 200);
+
+      const event = wheelOn(stage, 120, 100, 1_000);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(onWindow).toHaveBeenCalledTimes(1);
+    } finally {
+      document.documentElement.style.overflow = "";
+    }
+  });
+
+  it("should zoom time as before when the whole plot is in view", () => {
+    const onWindow = vi.fn();
+    const { stage } = renderView(onWindow);
+    placeStage(stage, 50);
+
+    const event = wheelOn(stage, 120, 200, 1_000);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("should zoom when the plot is in view even though the strips under it are cut off", () => {
+    const onWindow = vi.fn();
+    const { stage } = renderView(onWindow);
+    const plot = bookmapFrame(800, 600, { volume: true, cvd: true }).plot;
+    placeStage(stage, window.innerHeight - plot.y - plot.h - 10);
+
+    const event = wheelOn(stage, 120, plot.y + plot.h / 2, 1_000);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep scrolling the page through a gesture that began on a cut-off plot, and zoom once the wheel pauses", () => {
+    const onWindow = vi.fn();
+    const { stage } = renderView(onWindow);
+    placeStage(stage, window.innerHeight - 200);
+    wheelOn(stage, 120, 200, 1_000);
+
+    // The page has scrolled the whole plot into view, and momentum is still arriving.
+    placeStage(stage, 50);
+    const momentum = [wheelOn(stage, 120, 200, 1_100), wheelOn(stage, 120, 200, 1_200)];
+
+    expect(momentum.map((event) => event.defaultPrevented)).toEqual([false, false]);
+    expect(onWindow).not.toHaveBeenCalled();
+
+    const afterPause = wheelOn(stage, 120, 200, 1_500);
+
+    expect(afterPause.defaultPrevented).toBe(true);
+    expect(onWindow).toHaveBeenCalledTimes(1);
   });
 });

@@ -6,21 +6,18 @@ import { chartZoomIn, chartZoomOut } from "../domain/chartCursor.ts";
 import { formatLocalTime, formatQty, formatTicks } from "../domain/format.ts";
 import { aggregateHeat } from "../domain/heat.ts";
 import { isSignalOn, withRipsPreset, type LayoutSettings } from "../domain/layout.ts";
+import { dragReleasesLock, lastPriceAnchor, pinchZoomsPrice } from "../domain/priceLock.ts";
 import { fitRange, zoomRange } from "../domain/scale.ts";
 import { hints } from "../domain/hints.ts";
 import { eventMarker, eventMarkers, eventsInWindow } from "../domain/signals.ts";
-import { clampWindow, LIVE_EDGE_PAD, panOffsetMs, type ViewWindow, zoomTimeAbout } from "../domain/viewWindow.ts";
+import { clampWindow, defaultWindow, LIVE_EDGE_PAD, panOffsetMs, type ViewWindow, zoomTimeAbout } from "../domain/viewWindow.ts";
 import {
   type BookmapFrame,
   type ChartEvent,
   FAILED_RECLAIM_NOTE,
-  CENTER_FOLLOW_MS,
-  LOCK_RELEASE_DRAG_PX,
-  PINCH_PRICE_DEADBAND_PX,
   bookmapFrame,
   bookmapLevels,
   bookmapScales,
-  centerPriceShift,
   clampPriceShift,
   cobColumn,
   dotSizePresets,
@@ -46,17 +43,19 @@ import {
   shiftPriceRange,
   sliceBucketMs,
   sliceVolumeDots,
-  stepCenterShift,
   tooltipBox,
   volumeStripBars,
   zoomPriceAbout,
 } from "../domain/bookmap.ts";
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
-import { useCanvasTheme } from "../hooks/useCanvasTheme.ts";
+import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
+import { usePriceControls } from "../hooks/usePriceControls.ts";
+import { useWheelGate } from "../hooks/useWheelGate.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { drawBookmap, drawBookmapHover, type BookmapHeatScale } from "./drawBookmap.ts";
 import { Hint } from "./Hint.tsx";
+import { PriceControls } from "./PriceControls.tsx";
 
 /** Props of the Bookmap tab. It reads the live market and the saved layout, and it places no order. */
 export interface BookmapViewProps {
@@ -134,6 +133,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const { width, height } = useElementSize(stageRef);
+  const takesWheel = useWheelGate();
   const [showBbo, setShowBbo] = useState(true);
   const [showPnc, setShowPnc] = useState(true);
   const [showVolume, setShowVolume] = useState(true);
@@ -156,10 +156,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     anchorTicks: number | null;
   } | null>(null);
   const shiftRef = useRef(0);
-  const lockHeld = useRef(layout.centerPrice);
-  const lockProp = useRef(layout.centerPrice);
-  const onReadingRef = useRef(onReading);
-  const releaseLockRef = useRef(() => {});
   const priceZoomRef = useRef(viewWindow.priceZoom);
   const spanRef = useRef(viewWindow.spanMs);
   const offsetRef = useRef(viewWindow.offsetMs);
@@ -170,10 +166,10 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
   const [displayOpen, setDisplayOpen] = useState(false);
   const displayRef = useRef<HTMLDivElement>(null);
   const [heatScale, setHeatScale] = useState<BookmapHeatScale | null>(null);
-  // The draw effects list the epoch and the theme, so the canvases paint again once IBM Plex has loaded and once
-  // when the theme changes.
+  // The draw effects list the epoch and the palette, so the canvases paint again once IBM Plex has loaded and once
+  // when the theme or a chart colour changes.
   const fontEpoch = useCanvasFontEpoch();
-  const theme = useCanvasTheme();
+  const palette = useCanvasPalette();
   const [tip, setTip] = useState<{ readonly left: number; readonly top: number; readonly lines: readonly string[] } | null>(null);
   if (shiftRoot !== market.root) {
     setShiftRoot(market.root);
@@ -256,7 +252,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
         historyWatermarkMs: market.historyWatermarkMs,
         lastPrint,
       }),
-      anchorTicks: lastPrint?.priceTicks ?? candles.at(-1)?.c ?? null,
+      anchorTicks: lastPriceAnchor(market.prints, candles),
       bboStale:
         market.liquidity.quoteStale ||
         market.status.code === "STALE" ||
@@ -352,33 +348,39 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     spanRef.current = viewWindow.spanMs;
     offsetRef.current = viewWindow.offsetMs;
     historyRef.current = market.historyMinutes * 60_000;
-    onReadingRef.current = onReading;
-    if (layout.centerPrice !== lockProp.current) {
-      lockHeld.current = layout.centerPrice;
-      lockProp.current = layout.centerPrice;
-    }
-    releaseLockRef.current = () => {
-      if (!lockHeld.current) return;
-      lockHeld.current = false;
-      onReadingRef.current((current) => (current.centerPrice ? { ...current, centerPrice: false } : current));
-    };
   });
 
-  useEffect(() => {
-    if (!layout.centerPrice) return;
-    const id = window.setInterval(() => {
-      if (!lockHeld.current) return;
+  // +, −, Fit, Center and Lock, shared with Detail.
+  const priceActions = usePriceControls({
+    locked: layout.centerPrice,
+    onReading,
+    scene: () => {
       const current = sceneRef.current;
-      const price = current?.anchorTicks ?? null;
-      if (!current || price == null) return;
-      const target = centerPriceShift(current.zoomed, price);
-      const next = stepCenterShift(shiftRef.current, target);
-      if (next === shiftRef.current) return;
-      shiftRef.current = next;
-      setShiftTicks(next);
-    }, CENTER_FOLLOW_MS);
-    return () => window.clearInterval(id);
-  }, [layout.centerPrice]);
+      if (!current) return null;
+      return {
+        zoomed: current.zoomed,
+        fittedSpan: current.fittedSpan,
+        priceZoom: priceZoomRef.current,
+        shiftTicks: shiftRef.current,
+        anchorTicks: current.anchorTicks,
+      };
+    },
+    setShift: (ticks) => {
+      shiftRef.current = ticks;
+      setShiftTicks(ticks);
+    },
+    setZoom: (zoom) => {
+      priceZoomRef.current = zoom;
+      onWindow((w) => ({ ...w, priceZoom: zoom }));
+    },
+    resetWindow: () => {
+      const fitted = defaultWindow(market.historyMinutes);
+      priceZoomRef.current = fitted.priceZoom;
+      spanRef.current = fitted.spanMs;
+      offsetRef.current = fitted.offsetMs;
+      onWindow(() => fitted);
+    },
+  });
 
   const linePrice = hover && layout.showPriceLine ? priceAt(scene.priceSteps, hover.timeMs) : null;
   const onPriceLine =
@@ -440,7 +442,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       hover: null,
     });
     setHeatScale((current) => (sameHeatScale(current, painted) ? current : painted));
-  }, [scene, layout, market, width, height, showBbo, showPnc, fontEpoch, theme]);
+  }, [scene, layout, market, width, height, showBbo, showPnc, fontEpoch, palette]);
 
   useEffect(() => {
     const surface = prepareSurface(overlayRef.current, width, height);
@@ -454,10 +456,11 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       spec: market.instrument,
       hover,
     });
-  }, [hover, scene.frame, scene.startMs, scene.endMs, scene.range.low, scene.range.high, market.instrument, width, height, fontEpoch, theme]);
+  }, [hover, scene.frame, scene.startMs, scene.endMs, scene.range.low, scene.range.high, market.instrument, width, height, fontEpoch, palette]);
 
   // The wheel is native because React's listener is passive and cannot stop the page from scrolling.
   // The plot and the time strip zoom time. The PRICE column, and Shift+wheel on the plot, zoom price (D-36).
+  // None of them takes the wheel while a box that can scroll cuts the plot off, or a page scroll is still running (D-53).
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -469,12 +472,13 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       const priceWheel = where === "price" || (where === "plot" && event.shiftKey);
       const timeWheel = where === "plot" || where === "time";
       if (!priceWheel && !timeWheel) return;
+      if (!takesWheel(event, stage, current.frame.plot)) return;
       const delta = priceWheelDelta(event);
       if (delta === 0) return;
       const factor = delta > 0 ? chartZoomOut : chartZoomIn;
       if (priceWheel) {
         event.preventDefault();
-        releaseLockRef.current();
+        priceActions.releaseLock();
         const fraction = current.frame.plot.h > 0 ? (local.y - current.frame.plot.y) / current.frame.plot.h : 0.5;
         // Refs, not the updater: a second notch can arrive before React runs a queued update.
         const next = zoomPriceAbout(priceZoomRef.current, shiftRef.current, current.fittedSpan, fraction, factor);
@@ -495,7 +499,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     };
     stage.addEventListener("wheel", wheel, { passive: false });
     return () => stage.removeEventListener("wheel", wheel);
-  }, [onWindow]);
+  }, [onWindow, takesWheel, priceActions]);
 
   useEffect(() => {
     if (!displayOpen) return;
@@ -563,8 +567,8 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     const dy = Math.max(1, Math.abs(a.y - b.y));
     const timeFactor = pinchAxisFactor(pinch.dx, dx);
     // A pixel of vertical jitter in a sideways pinch is not a price zoom, so Lock stays on.
-    const priceFactor = Math.abs(dy - pinch.dy) < PINCH_PRICE_DEADBAND_PX ? 1 : pinchAxisFactor(pinch.dy, dy);
-    if (priceFactor !== 1) releaseLockRef.current();
+    const priceFactor = pinchZoomsPrice(pinch.dy, dy) ? pinchAxisFactor(pinch.dy, dy) : 1;
+    if (priceFactor !== 1) priceActions.releaseLock();
     const time = zoomTimeAbout(pinch.spanMs, pinch.offsetMs, pinch.fractionX, timeFactor, historyRef.current);
     const price = zoomPriceAbout(pinch.zoom, pinch.shift, pinch.fittedSpan, pinch.fractionY, priceFactor);
     spanRef.current = time.spanMs;
@@ -599,7 +603,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     const { x, y } = localPoint(stage, event.clientX, event.clientY);
     const where = hitZone(scene.frame, x, y);
     if (where === "price") {
-      releaseLockRef.current();
+      priceActions.releaseLock();
       const fraction = scene.frame.plot.h > 0 ? (y - scene.frame.plot.y) / scene.frame.plot.h : 0.5;
       dragRef.current = {
         kind: "zoom",
@@ -640,26 +644,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     setDragging(false);
   };
 
-  const resetPrice = () => {
-    const historyMs = market.historyMinutes * 60_000;
-    setShiftTicks(0);
-    shiftRef.current = 0;
-    priceZoomRef.current = 1;
-    spanRef.current = historyMs;
-    offsetRef.current = 0;
-    releaseLockRef.current();
-    onWindow(() => ({ spanMs: historyMs, offsetMs: 0, priceZoom: 1 }));
-  };
-
-  const centerOnLast = () => {
-    const current = sceneRef.current;
-    const price = current?.anchorTicks ?? null;
-    if (!current || price == null) return;
-    const shift = centerPriceShift(current.zoomed, price);
-    shiftRef.current = shift;
-    setShiftTicks(shift);
-  };
-
   const dismissHint = () => {
     setShowHint(false);
     try {
@@ -667,12 +651,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     } catch {
       // A private window can refuse storage. The hint still stays closed until the next visit.
     }
-  };
-
-  const zoomBy = (factor: number) => {
-    // The +/− buttons are a price zoom about the middle, so they release Lock the way the tooltip says.
-    releaseLockRef.current();
-    applyZoom(viewWindow.priceZoom, shiftTicks, scene.fittedSpan, 0.5, factor);
   };
 
   const placeTip = (clientX: number, clientY: number) => {
@@ -729,12 +707,12 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     if (drag && drag.pointer === event.pointerId && drag.kind === "pan") {
       // While Lock is on the 150 ms step owns the price shift. A sideways drag writes time only, or the two fight.
       let pan = drag;
-      if (lockHeld.current && Math.abs(event.clientY - drag.y) >= LOCK_RELEASE_DRAG_PX) {
-        releaseLockRef.current();
+      if (priceActions.isLockHeld() && dragReleasesLock(drag.y, event.clientY)) {
+        priceActions.releaseLock();
         pan = { ...drag, y: event.clientY, ticks: shiftRef.current };
         dragRef.current = pan;
       }
-      if (!lockHeld.current) {
+      if (!priceActions.isLockHeld()) {
         const span = scene.range.high - scene.range.low;
         const ticks = clampPriceShift(pan.ticks + dragShiftTicks(event.clientY - pan.y, scene.range, scene.frame.plot.h), span);
         shiftRef.current = ticks;
@@ -795,34 +773,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
             )}
           </Hint>
         </fieldset>
-        <fieldset>
-          <legend>Price</legend>
-          <button type="button" aria-label="Zoom price in" onClick={() => zoomBy(chartZoomIn)}>
-            +
-          </button>
-          <button type="button" aria-label="Zoom price out" onClick={() => zoomBy(chartZoomOut)}>
-            −
-          </button>
-          <button type="button" onClick={resetPrice}>
-            Fit
-          </button>
-          <button type="button" aria-label="Center price" disabled={scene.anchorTicks == null} onClick={centerOnLast}>
-            Center
-          </button>
-          <button
-            type="button"
-            aria-label="Lock center"
-            aria-pressed={layout.centerPrice}
-            title="Keep the last price in the middle. A vertical drag or a price zoom, including + and −, turns this off. A sideways drag does not."
-            onClick={() => {
-              const next = !layout.centerPrice;
-              if (next) centerOnLast();
-              onReading((current) => ({ ...current, centerPrice: next }));
-            }}
-          >
-            Lock
-          </button>
-        </fieldset>
+        <PriceControls locked={layout.centerPrice} canCenter={scene.anchorTicks != null} actions={priceActions} />
         <div className="bookmap-display" ref={displayRef}>
           <button type="button" aria-expanded={displayOpen} aria-controls="bookmap-display-panel" onClick={() => setDisplayOpen((open) => !open)}>
             Display
@@ -969,7 +920,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       <div
         className={dragging ? "bookmap-stage bookmap-stage--dragging" : "bookmap-stage"}
         ref={stageRef}
-        title="Shift+wheel zooms price. Scroll the plot to zoom time. Drag the PRICE scale to stretch it. Drag the plot to move time and price. Center puts the last price in the middle. Lock keeps it there. Double-click fits."
+        title="Shift+wheel zooms price and scrolling the plot zooms time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to stretch it. Drag the plot to move time and price. Center puts the last price in the middle. Lock keeps it there. Double-click fits."
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -981,14 +932,14 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
         }}
         onDoubleClick={(event) => {
           if (event.target instanceof Element && event.target.closest(".bookmap-hint, .bookmap-key")) return;
-          resetPrice();
+          priceActions.fit();
         }}
       >
         <canvas ref={canvasRef} aria-hidden="true" />
         <canvas ref={overlayRef} aria-hidden="true" />
         {showHint && (
           <p className="bookmap-hint">
-            Scroll the plot to zoom time. Drag the PRICE scale to zoom price. Drag the plot to move. Center recenters price. Lock holds the last price in the middle.
+            Scroll the plot to zoom time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to zoom price. Drag the plot to move. Center recenters price. Lock holds the last price in the middle.
             <button type="button" onClick={dismissHint}>
               Dismiss
             </button>

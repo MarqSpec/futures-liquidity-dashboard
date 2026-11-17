@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import type { CrosshairStore } from "../hooks/crosshair.ts";
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
-import { useCanvasTheme } from "../hooks/useCanvasTheme.ts";
+import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
 import { prepareSurface, type Surface } from "../lib/canvas.ts";
 import { colors } from "../theme.ts";
@@ -27,9 +27,9 @@ export function TimePane({ label, summary, className, crosshair, draw }: TimePan
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<SeriesPaneGeometry | null>(null);
   const { width, height } = useElementSize(wrapRef);
-  // Read so the pane re-renders, and its draw effect runs again, once the canvas fonts load and when the theme changes.
+  // Read so the pane re-renders, and its draw effect runs again, once the canvas fonts load and when the theme or a chart colour changes.
   useCanvasFontEpoch();
-  const theme = useCanvasTheme();
+  const palette = useCanvasPalette();
 
   useEffect(() => {
     const surface = prepareSurface(baseRef.current, width, height);
@@ -55,7 +55,7 @@ export function TimePane({ label, summary, className, crosshair, draw }: TimePan
     };
     paint();
     return crosshair.subscribe(paint);
-  }, [crosshair, width, height, theme]);
+  }, [crosshair, width, height, palette]);
 
   useEffect(() => {
     const canvas = overlayRef.current;

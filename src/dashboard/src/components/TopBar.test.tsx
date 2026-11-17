@@ -128,4 +128,13 @@ describe("TopBar", () => {
     expect(group).not.toBeNull();
     expect(group?.lastElementChild?.contains(control)).toBe(true);
   });
+
+  it.each(["overview", "detail", "bookmap"] as const)("should offer the chart colours in the right group before the theme control when the tab is %s", (tab) => {
+    render(<TopBar tab={tab} instrument="MES" view={view} onSelect={vi.fn()} />);
+
+    const button = screen.getByRole("button", { name: "Chart colours" });
+    const theme = screen.getByRole("combobox", { name: "Theme" });
+    expect(button.closest(".top-bar-status")).toBe(theme.closest(".top-bar-status"));
+    expect(button.compareDocumentPosition(theme) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

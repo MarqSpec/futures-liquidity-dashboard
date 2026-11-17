@@ -2,7 +2,6 @@ import type { HeatColumn } from "../api/schemas.ts";
 import type { Candle } from "../domain/candles.ts";
 import { firstColumnEndingAfter } from "../domain/heat.ts";
 import { signalKindNames } from "../domain/signals.ts";
-import type { ThemeId } from "../design/tokenFile.ts";
 import { canvasFonts } from "../lib/canvasFonts.ts";
 import { fnvHex, fnvStart, mix, mixNumbers } from "../lib/fnv.ts";
 import { canvasTheme } from "../theme.ts";
@@ -15,7 +14,7 @@ const heatStamp = new WeakMap<HeatColumn, number>();
  * Identity of what `drawMainChart` would put on the canvas. Time is quantised to one pixel, so a live edge that
  * has not moved a pixel does not redraw. Values are mixed with FNV-1a, not added, so two different inputs cannot
  * cancel to the same total. `fontEpoch` changes once the canvas fonts load, so text drawn in the fallback face is redrawn;
- * `theme` is the canvas theme, so a theme switch redraws the frame in the new colours.
+ * `palette` is the canvas palette, so a theme switch or a changed chart colour redraws the frame in the new colours.
  */
 export function mainChartDrawKey(
   model: MainChartModel,
@@ -23,7 +22,7 @@ export function mainChartDrawKey(
   height: number,
   devicePixelRatio = 1,
   fontEpoch = canvasFonts.epoch(),
-  theme: ThemeId = canvasTheme.current(),
+  palette: string = canvasTheme.palette(),
 ): string {
   const span = Math.max(1, model.endMs - model.startMs);
   const quantum = span / Math.max(1, width);
@@ -34,7 +33,7 @@ export function mainChartDrawKey(
     height,
     devicePixelRatio,
     fontEpoch,
-    theme,
+    palette,
     Math.round(model.startMs / quantum),
     Math.round(model.endMs / quantum),
     Math.floor(model.market.serverTimeMs / 1000),

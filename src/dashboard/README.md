@@ -63,6 +63,12 @@ in `src/test/fixtures/`.
 - `src/domain/`: pure logic, covering delta merge, sequencing, decoders, formatting, scales, the layout model, and
   the picker's, Overview's and regime rules (`products.ts`, `overview.ts`, `regime.ts`, `tabs.ts`).
 - `src/components/`: the canvas panes (`draw*.ts`) and the panels around them.
+- Chart colour layer: every colour, on a canvas or in `index.css`, is read through the one override layer in
+  `src/theme.ts` (`themeColor`), so a chart colour role keeps one meaning on every tab. To colour a new mark, read its
+  token through `themeColor` or `colors`, never from `design/tokens.ts`; `src/chartColorLayer.test.ts` fails otherwise.
+  The roles are listed once in `src/design/chartColors.ts`, and a viewer's colours are kept per theme in this browser's
+  localStorage under `futures-liquidity-dashboard.chart-colors.v1` (`src/lib/chartColorOverrides.ts`;
+  [a separate change]).
 - `src/design/`: the design system's tokens (`tokens.json`, both themes) and the stylesheet generated from them
   (`tokens.css`). `index.css` uses only those custom properties, and `src/theme.ts` gives the canvases the active
   theme's values from the same file ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) D-42). IBM Plex
@@ -73,6 +79,28 @@ in `src/test/fixtures/`.
   the best bid and ask are drawn in `bid` and `ask` (D-48, [a separate change]). Light's ground is a
   warm paper, not white: `surface-lowest` and the heatmap's empty `heat-0` are both `#efede7`, and the other surfaces step
   darker from it (D-50, [a separate change]).
+- Chart colours: the top bar's **Chart colours** button (`components/ChartColorSettings.tsx`) lets the viewer recolour
+  each chart colour role (up, down, the volume-dot outlines *(2026-11-15, [a separate change])*, bid, ask, the heat stops, VWAP, the EMAs and indicators, the levels, the signal
+  biases, the Order Flow events, warmup) for the active theme, with a sample, its worst contrast and a warning below its
+  NFR-8 floor; the choice stands either way, and goes through the chart colour layer above (FR-71, D-51, [a separate change]).
+- Volume-dot outlines: every volume dot, on Detail and Order Flow alike, has its edge stroked by aggressor side, the buy
+  share's arc in `dot-outline-buy` (a green) and the sell share's in `dot-outline-sell` (a red), part by part on a split
+  dot, outside a 1px `dot-outline-halo` that keeps it visible on a bright heat cell. Both charts call the one routine,
+  `components/volumeDotOutline.ts` (`strokeVolumeDotOutline`), after the fill and before the quantity; to draw a volume
+  dot anywhere else, call it too (FR-59, FR-67, D-52, [a separate change]).
+- Wheel: while a page or container that can scroll cuts a chart's plot off, the chart leaves the wheel uncancelled so
+  that scrolls instead, and a wheel gesture that began by scrolling keeps scrolling until the wheel pauses for 250 ms.
+  A page that cannot scroll (the wide layout) does not count, so there a cut-off plot zooms as before. Detail and Order Flow both ask `hooks/useWheelGate.ts` (over `lib/wheelGate.ts`) before they zoom; a
+  new chart that zooms on the wheel asks it too (FR-67, FR-68, D-53, [a separate change]).
+  A chart plot is never taller than the window: `index.css` caps the Order Flow stage and the Detail price pane at
+  `100svh` and lets their minimums (420 px, 280 px on a phone, and 220 px) yield to it, so in a short window the chart
+  shrinks and can always be scrolled wholly into view, where the wheel zooms it. A new chart that zooms on the wheel
+  is capped the same way (D-53, [a separate change]).
+- Price controls: Detail and Order Flow show one Price group, `components/PriceControls.tsx` (+, −, Fit, Center and
+  Lock), over one behaviour, `hooks/usePriceControls.ts`. Lock is the saved `centerPrice`, one setting for both tabs,
+  and what turns it off (a price zoom, Fit, a 4 px vertical drag, a 2 px vertical pinch) is decided there and in
+  `domain/priceLock.ts`; a sideways drag and a time zoom leave it on. A chart that gets price controls renders that group
+  and hands the hook its own shift and zoom (FR-67, FR-68, D-54, [a separate change]).
 - Hints: `components/Hint.tsx` explains a control that is not obvious from its label, in one sentence (D-47). It shows
   on hover and on keyboard focus, and on touch through an ⓘ button beside the control. The control references it
   with `aria-describedby`; Escape, blur and the pointer leaving hide it. It never uses a native `title`. To hint a

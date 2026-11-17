@@ -360,6 +360,8 @@ describe("MarketView plot pan and wheel", () => {
     expect(readNumber("span")).toBe(historyMs);
 
     const stuck = wheel(anchorX, anchorY, 120, false);
+    // After the wheel pauses, so a notch above that scrolled the page does not carry on into this one (D-53).
+    Object.defineProperty(stuck, "timeStamp", { value: stuck.timeStamp + 1_000 });
     fireEvent(canvas, stuck);
 
     expect(stuck.defaultPrevented).toBe(false);

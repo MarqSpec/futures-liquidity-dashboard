@@ -313,6 +313,144 @@ p {
   margin-left: auto;
 }
 
+/* The chart colour settings: a panel under its top-bar button, every role with a picker, a sample of its mark,
+   its worst contrast and a reset. The samples are drawn inline in the chosen colour. */
+.chart-colors {
+  position: relative;
+}
+
+.chart-colors-panel {
+  position: absolute;
+  z-index: var(--z-floating-control);
+  inset: calc(100% + var(--space-4)) 0 auto auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(72vh, 680px);
+  overflow-y: auto;
+  padding: var(--space-12);
+  background: var(--surface-highest);
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+}
+
+.chart-colors-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.chart-colors-head h2 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--on-surface);
+}
+
+.chart-colors-note {
+  margin: var(--space-8) 0;
+  font-size: 12px;
+  color: var(--on-surface-muted);
+}
+
+.chart-colors-group {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-4) var(--space-8) var(--space-8);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+}
+
+.chart-colors-group legend {
+  padding: 0 var(--space-4);
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+.chart-color-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 28px auto auto;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  padding: var(--space-2) 0;
+}
+
+.chart-color-row input[type="color"] {
+  width: 32px;
+  height: var(--control-height);
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.chart-color-row label {
+  font-size: 12px;
+  color: var(--on-surface);
+}
+
+.chart-color-sample {
+  justify-self: center;
+  box-sizing: border-box;
+}
+
+.chart-color-sample--text {
+  font: 600 12px/16px var(--font-mono);
+}
+
+.chart-color-sample--line {
+  width: 24px;
+  border-top: 3px solid;
+}
+
+.chart-color-sample--dot,
+.chart-color-sample--ring {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+}
+
+.chart-color-sample--ring {
+  border: 2px solid;
+}
+
+.chart-color-sample--bar {
+  width: 8px;
+  height: 16px;
+}
+
+.chart-color-sample--fill {
+  width: 20px;
+  height: 14px;
+  border-radius: var(--radius-xs);
+}
+
+.chart-color-contrast {
+  font: 500 11px/14px var(--font-mono);
+  color: var(--on-surface-muted);
+}
+
+.chart-color-warning,
+.chart-color-warning strong {
+  color: var(--danger);
+}
+
+.chart-color-contrast strong {
+  display: block;
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.chart-color-reset,
+.chart-colors-reset-all {
+  font-size: 11px;
+}
+
+.chart-colors-reset-all {
+  margin-top: var(--space-4);
+}
+
 .clock {
   font: 500 12px/16px var(--font-mono);
   color: var(--on-surface-variant);
@@ -511,6 +649,55 @@ p {
   z-index: 2;
 }
 
+/* Detail's price controls: the Order Flow Price group, one strip above the Detail price chart, joined the same way. */
+.chart-price-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: var(--space-4) var(--space-8);
+  background: var(--surface-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.chart-price-controls fieldset {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chart-price-controls legend {
+  padding: 0 6px 0 0;
+  font-size: 11px;
+  color: var(--on-surface-muted);
+}
+
+.chart-price-controls button {
+  height: var(--control-height-sm);
+  padding: 0 var(--space-6);
+  font-size: 11px;
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.chart-price-controls button:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  margin-left: 0;
+}
+
+.chart-price-controls button:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.chart-price-controls button[aria-pressed="true"] {
+  z-index: 1;
+}
+
+.chart-price-controls button:focus-visible {
+  z-index: 2;
+}
+
 .bookmap-hint {
   position: absolute;
   z-index: 3;
@@ -593,10 +780,16 @@ p {
   background: var(--surface-container);
 }
 
+/* Never taller than the window, the visible height of the box that scrolls it, so the whole plot can come into view
+   and the wheel can zoom it (D-53); a short window shrinks the stage below its minimum. svh is #root's height on a
+   phone; the vh line is the fallback for a browser without it. */
 .bookmap-stage {
   position: relative;
   flex: 1 1 auto;
-  min-height: 420px;
+  min-height: min(420px, 100vh);
+  min-height: min(420px, 100svh);
+  max-height: 100vh;
+  max-height: 100svh;
   cursor: grab;
   /* The browser must not steal a vertical touch and cancel the pointer, or the drag never starts (REQUIREMENTS.md FR-67). */
   touch-action: none;
@@ -666,7 +859,8 @@ p {
   }
 
   .bookmap-stage {
-    min-height: 280px;
+    min-height: min(280px, 100vh);
+    min-height: min(280px, 100svh);
   }
 
   .bookmap-readout {
@@ -1469,9 +1663,13 @@ p {
   display: flex;
 }
 
+/* Capped at the window like the Order Flow stage, so the Detail plot can always come wholly into view (D-53). */
 .pane-main {
   flex: 5 1 0;
-  min-height: 220px;
+  min-height: min(220px, 100vh);
+  min-height: min(220px, 100svh);
+  max-height: 100vh;
+  max-height: 100svh;
 }
 
 .pane-fill {

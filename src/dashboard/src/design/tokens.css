@@ -55,6 +55,9 @@
   --signal-marker: #ffb74d;
   --dot-label: #08090c;
   --dot-label-halo: #f3f1ea;
+  --dot-outline-buy: #00e676;
+  --dot-outline-sell: #ff7c7c;
+  --dot-outline-halo: var(--dot-label);
   --guide-caption: #f5f7fb;
   --depth-added: #66bb6a;
   --depth-pulled: #ef5350;
@@ -156,6 +159,9 @@
   --signal-marker: #9f3200;
   --dot-label: #f5f7fb;
   --dot-label-halo: #17110b;
+  --dot-outline-buy: #11632a;
+  --dot-outline-sell: #9e1b1b;
+  --dot-outline-halo: var(--dot-label);
   --depth-added: #2e7d32;
   --depth-pulled: #b71c1c;
   --highlight-best: rgba(255, 193, 7, 0.22);

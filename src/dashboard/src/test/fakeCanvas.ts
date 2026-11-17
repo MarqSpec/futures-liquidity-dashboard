@@ -9,11 +9,12 @@ export interface CanvasCall {
   readonly font: unknown;
   readonly lineWidth: unknown;
   readonly lineJoin: unknown;
+  readonly globalAlpha: unknown;
 }
 
 /**
- * A stand-in 2D context that records every method call (with the fill, stroke, font, line width and line join at the
- * time), so drawing code runs in Node and a test can assert what was drawn without a browser. `save` and `restore` keep a
+ * A stand-in 2D context that records every method call (with the fill, stroke, font, line width, line join and alpha
+ * at the time), so drawing code runs in Node and a test can assert what was drawn without a browser. `save` and `restore` keep a
  * real state stack, as a browser does, so state one draw leaves behind is visible to the next.
  */
 export function fakeSurface(width = 800, height = 400): { readonly surface: Surface; readonly calls: CanvasCall[] } {
@@ -28,7 +29,7 @@ export function fakeSurface(width = 800, height = 400): { readonly surface: Surf
   };
   const saved: Record<string | symbol, unknown>[] = [];
   const record = (key: string, args: unknown[]) => {
-    calls.push({ method: key, args, fillStyle: state.fillStyle, strokeStyle: state.strokeStyle, font: state.font, lineWidth: state.lineWidth, lineJoin: state.lineJoin });
+    calls.push({ method: key, args, fillStyle: state.fillStyle, strokeStyle: state.strokeStyle, font: state.font, lineWidth: state.lineWidth, lineJoin: state.lineJoin, globalAlpha: state.globalAlpha });
   };
   const ctx = new Proxy(state, {
     get(target, key) {

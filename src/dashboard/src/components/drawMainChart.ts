@@ -11,6 +11,7 @@ import { linearScale, niceTicks, timeTicks, type LinearScale } from "../domain/s
 import { biasColors, kindName } from "../domain/signals.ts";
 import { hatchPattern, labelBox, type Surface } from "../lib/canvas.ts";
 import { AXIS_WIDTH, canvasColors, colors, emaColors, fonts, MONO, PROFILE_GUTTER, themed } from "../theme.ts";
+import { strokeVolumeDotOutline } from "./volumeDotOutline.ts";
 
 /** Height of the time axis under the main chart. */
 export const TIME_AXIS_HEIGHT = 20;
@@ -319,11 +320,15 @@ function drawVolumeDots(ctx: CanvasRenderingContext2D, m: MainChartModel, time: 
     minQuantity: m.dotMinQuantity ?? 1,
   });
   for (const dot of dots) {
+    const x = time.toPx(dot.timeMs);
+    const y = price.toPx(dot.priceTicks);
     ctx.beginPath();
     ctx.fillStyle = aggressorColor(dot.aggressor);
     ctx.globalAlpha = 0.9;
-    ctx.arc(time.toPx(dot.timeMs), price.toPx(dot.priceTicks), dot.radius, 0, Math.PI * 2);
+    ctx.arc(x, y, dot.radius, 0, Math.PI * 2);
     ctx.fill();
+    // The same outline as Order Flow's, so a green or red edge means the same aggressor on every tab.
+    strokeVolumeDotOutline(ctx, x, y, dot.radius, dot.aggressor === "Bid" ? 1 : 0);
   }
   ctx.globalAlpha = 1;
 }

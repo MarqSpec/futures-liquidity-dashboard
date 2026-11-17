@@ -1,6 +1,5 @@
 import type { Bias, Signal } from "../api/schemas.ts";
-import { color } from "../design/tokens.ts";
-import { canvasColors, themed } from "../theme.ts";
+import { canvasColors, themeColor, themed } from "../theme.ts";
 
 /** Colours by bias, in the active canvas theme: what a signal implies for price, never who was aggressive. */
 export const biasColors: Readonly<Record<Bias, string>> = themed((theme) => {
@@ -54,7 +53,7 @@ export interface EventMarker {
 
 /** Each kind's colour and the unknown kind's, in the active canvas theme. */
 const eventColors: Readonly<Record<string, string>> = themed((theme) =>
-  Object.fromEntries([...eventKinds.map((marker) => marker.token), "event-unknown"].map((token) => [token, color(token, theme)])),
+  Object.fromEntries([...eventKinds.map((marker) => marker.token), "event-unknown"].map((token) => [token, themeColor(token, theme)])),
 );
 
 function withThemeColour(marker: Omit<EventMarker, "color">): EventMarker {

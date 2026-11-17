@@ -8,3 +8,11 @@ import { canvasTheme } from "../theme.ts";
 export function useCanvasTheme(): ThemeId {
   return useSyncExternalStore(canvasTheme.subscribe, canvasTheme.current, canvasTheme.current);
 }
+
+/**
+ * The canvas palette: the theme plus the viewer's chart colours for it. A canvas component that reads it re-renders,
+ * and so redraws once, when the theme or a chart colour changes.
+ */
+export function useCanvasPalette(): string {
+  return useSyncExternalStore(canvasTheme.subscribe, canvasTheme.palette, canvasTheme.palette);
+}

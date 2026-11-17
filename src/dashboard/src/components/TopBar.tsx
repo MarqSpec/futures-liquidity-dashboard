@@ -3,6 +3,7 @@ import { useRef, type KeyboardEvent } from "react";
 import type { StreamView } from "../api/marketStream.ts";
 import { formatChicagoTime, formatLocalTime } from "../domain/format.ts";
 import { viewTabLabel, viewTabOrder, type DashboardTab } from "../domain/tabs.ts";
+import { ChartColorSettings } from "./ChartColorSettings.tsx";
 import { ThemeControl } from "./ThemeControl.tsx";
 
 /** Props of the app frame's top bar. */
@@ -22,7 +23,7 @@ const hubLabels = {
 
 /**
  * The top of the page: the product name, the view tabs, then the exchange session, the market hub's state, the
- * exchange clock and the theme control. Arrow keys, Home and End move between the tabs and select the one they land on.
+ * exchange clock, the chart colour settings and the theme control. Arrow keys, Home and End move between the tabs and select the one they land on.
  */
 export function TopBar({ tab, instrument, view, onSelect }: TopBarProps) {
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -82,6 +83,7 @@ export function TopBar({ tab, instrument, view, onSelect }: TopBarProps) {
             {formatChicagoTime(view.market.serverTimeMs)}
           </span>
         )}
+        <ChartColorSettings />
         <ThemeControl />
       </div>
     </header>

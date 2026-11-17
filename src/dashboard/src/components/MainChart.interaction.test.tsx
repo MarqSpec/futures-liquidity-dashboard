@@ -358,3 +358,100 @@ describe("MainChart keyboard", () => {
     expect(document.activeElement).not.toBe(chart);
   });
 });
+
+describe("MainChart wheel while the page scrolls", () => {
+  // The overlay's box on screen. jsdom lays nothing out, so the test places it.
+  function placeOverlay(canvas: HTMLCanvasElement, top: number): void {
+    vi.spyOn(canvas, "getBoundingClientRect").mockImplementation(
+      () => ({ x: 0, y: top, left: 0, top, right: 800, bottom: top + 400, width: 800, height: 400, toJSON: () => ({}) }) as DOMRect,
+    );
+  }
+
+  function wheelAtTime(timeStamp: number, deltaY = 120, shiftKey = false): WheelEvent {
+    const event = wheelAt(100, 100, deltaY, shiftKey);
+    Object.defineProperty(event, "timeStamp", { value: timeStamp });
+    return event;
+  }
+
+  function renderChart() {
+    const onZoomTime = vi.fn(() => true);
+    const onZoomPrice = vi.fn();
+    render(<MainChart model={chartModel()} spec={market.instrument} crosshair={createCrosshairStore()} summary="MES chart" onZoomTime={onZoomTime} onZoomPrice={onZoomPrice} onPan={noop} onPanPrice={noop} onReset={noop} />);
+    return { canvas: overlay(), onZoomTime, onZoomPrice };
+  }
+
+  it.each([
+    ["a plain wheel", false],
+    ["Shift+wheel", true],
+  ])("should let the page scroll and leave the window alone when %s lands on a plot cut off by the bottom of the viewport", (_name, shiftKey) => {
+    const { canvas, onZoomTime, onZoomPrice } = renderChart();
+    placeOverlay(canvas, window.innerHeight - 100);
+
+    const event = wheelAtTime(1_000, 120, shiftKey);
+    fireEvent(canvas, event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(onZoomTime).not.toHaveBeenCalled();
+    expect(onZoomPrice).not.toHaveBeenCalled();
+  });
+
+  it("should zoom as before on a cut-off plot when the page cannot scroll", () => {
+    // The wide layout: html, body and #root are overflow hidden, so letting the wheel through would do nothing.
+    document.documentElement.style.overflow = "hidden";
+    try {
+      const { canvas, onZoomTime } = renderChart();
+      placeOverlay(canvas, window.innerHeight - 100);
+
+      const event = wheelAtTime(1_000);
+      fireEvent(canvas, event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(onZoomTime).toHaveBeenCalledTimes(1);
+    } finally {
+      document.documentElement.style.overflow = "";
+    }
+  });
+
+  it("should zoom time as before when the whole plot is in view", () => {
+    const { canvas, onZoomTime } = renderChart();
+    placeOverlay(canvas, 100);
+
+    const event = wheelAtTime(1_000);
+    fireEvent(canvas, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onZoomTime).toHaveBeenCalledTimes(1);
+  });
+
+  it("should zoom when the plot is in view even though the time axis under it is cut off", () => {
+    const { canvas, onZoomTime } = renderChart();
+    // The overlay is 400px tall and its plot the top 400 - TIME_AXIS_HEIGHT (20) of it.
+    placeOverlay(canvas, window.innerHeight - 390);
+
+    const event = wheelAtTime(1_000);
+    fireEvent(canvas, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onZoomTime).toHaveBeenCalledTimes(1);
+  });
+
+  it("should keep scrolling the page through a gesture that began on a cut-off plot, and zoom once the wheel pauses", () => {
+    const { canvas, onZoomTime } = renderChart();
+    placeOverlay(canvas, window.innerHeight - 100);
+    fireEvent(canvas, wheelAtTime(1_000));
+
+    // The page has scrolled the whole plot into view, and momentum is still arriving.
+    placeOverlay(canvas, 100);
+    const momentum = [wheelAtTime(1_100), wheelAtTime(1_200)];
+    for (const event of momentum) fireEvent(canvas, event);
+
+    expect(momentum.map((event) => event.defaultPrevented)).toEqual([false, false]);
+    expect(onZoomTime).not.toHaveBeenCalled();
+
+    const afterPause = wheelAtTime(1_500);
+    fireEvent(canvas, afterPause);
+
+    expect(afterPause.defaultPrevented).toBe(true);
+    expect(onZoomTime).toHaveBeenCalledTimes(1);
+  });
+});

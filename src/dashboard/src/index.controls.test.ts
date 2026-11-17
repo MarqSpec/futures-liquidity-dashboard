@@ -217,6 +217,18 @@ describe("index.css button groups", () => {
     ]).toEqual([true, true]);
   });
 
+  it("should join Detail's price buttons the way Order Flow's are and keep the strip its own height when it renders", () => {
+    expect([
+      has(".chart-price-controls", "flex: none"),
+      has(".chart-price-controls button", "height: var(--control-height-sm)"),
+      has(".chart-price-controls button", "border-radius: 0"),
+      has(".chart-price-controls button", "margin-left: -1px"),
+      has(".chart-price-controls button:first-of-type", "border-radius: var(--radius-sm) 0 0 var(--radius-sm)"),
+      has(".chart-price-controls button:last-of-type", "border-radius: 0 var(--radius-sm) var(--radius-sm) 0"),
+      has('.chart-price-controls button[aria-pressed="true"]', "z-index: 1"),
+    ]).toEqual([true, true, true, true, true, true, true]);
+  });
+
   it("should lift the chosen button over its neighbours so its border is not covered when it is pressed", () => {
     expect(has('.segmented button[aria-pressed="true"]', "z-index: 1")).toBe(true);
   });

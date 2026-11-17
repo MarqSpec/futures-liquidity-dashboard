@@ -1,14 +1,12 @@
 import type { Footprint } from "../api/schemas.ts";
 import { composite, mostReadable, withAlpha } from "../design/color.ts";
-import type { ThemeId } from "../design/tokenFile.ts";
 import { decodeFootprint, footprintPoc, footprintRows, type FootprintCell } from "../domain/footprint.ts";
 import { formatQty, formatSigned, formatTicks, type TickSpec } from "../domain/format.ts";
 import { linearScale, type LinearScale } from "../domain/scale.ts";
 import type { Surface } from "../lib/canvas.ts";
 import { canvasFonts } from "../lib/canvasFonts.ts";
 import { fnvHex, fnvStart, mix, mixNumbers } from "../lib/fnv.ts";
-import { color } from "../design/tokens.ts";
-import { AXIS_WIDTH, canvasTheme, colors, fonts, perTheme } from "../theme.ts";
+import { AXIS_WIDTH, canvasTheme, colors, fonts, perTheme, themeColor } from "../theme.ts";
 import type { SeriesPaneGeometry } from "./drawSeriesPane.ts";
 
 const DELTA_STRIP = 16;
@@ -29,7 +27,7 @@ export function splitCellAlpha(volume: number, maxVolume: number, imbalanced: bo
   return imbalanced ? 0.85 : 0.08 + 0.4 * (volume / maxVolume);
 }
 
-const groundColour = perTheme((theme) => color(FOOTPRINT_GROUND, theme));
+const groundColour = perTheme((theme) => themeColor(FOOTPRINT_GROUND, theme));
 
 /** Paints the pane's ground: the one colour the cell text is picked against. */
 function paintGround(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -38,8 +36,8 @@ function paintGround(ctx: CanvasRenderingContext2D, width: number, height: numbe
 }
 
 const cellText = perTheme((theme) => {
-  const [preferred, ...others] = CELL_TEXT_TOKENS.map((name) => color(name, theme));
-  const ground = color(FOOTPRINT_GROUND, theme);
+  const [preferred, ...others] = CELL_TEXT_TOKENS.map((name) => themeColor(name, theme));
+  const ground = themeColor(FOOTPRINT_GROUND, theme);
   return (side: string, alpha: number): string =>
     mostReadable(composite(side, alpha, ground), preferred ?? "", others, TEXT_MINIMUM);
 });
@@ -108,14 +106,15 @@ let footprintCache: FootprintCache | null = null;
  * Closed bars plus the row layout, quantised to one pixel of the time window. The developing bar's volume is
  * left out, so a tick that does not add a price reuses the cached columns. Closed cells are mixed, not summed,
  * so two different bars cannot share a key. `fontEpoch` changes once the canvas fonts load, so cached text drawn in
- * the fallback face is not reused; `theme` is the canvas theme, so cells cached in one theme's colours are not either.
+ * the fallback face is not reused; `palette` is the canvas palette, so cells cached in one theme's colours, or before a
+ * chart colour changed, are not either.
  */
 export function footprintCacheKey(
   model: FootprintModel,
   width: number,
   height: number,
   fontEpoch = canvasFonts.epoch(),
-  theme: ThemeId = canvasTheme.current(),
+  palette: string = canvasTheme.palette(),
 ): string {
   const span = Math.max(1, model.endMs - model.startMs);
   const quantum = span / Math.max(1, width);
@@ -128,7 +127,7 @@ export function footprintCacheKey(
     height,
     globalThis.devicePixelRatio || 1,
     fontEpoch,
-    theme,
+    palette,
     Math.round(model.startMs / quantum),
     Math.round(model.endMs / quantum),
     rows.join(","),

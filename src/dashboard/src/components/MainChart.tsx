@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { PINCH_AXIS_MIN_PX } from "../domain/bookmap.ts";
+import { dragReleasesLock, pinchZoomsPrice } from "../domain/priceLock.ts";
 import type { TickSpec } from "../domain/format.ts";
 import type { HeatColumn } from "../api/schemas.ts";
 import {
@@ -19,8 +20,9 @@ import {
 } from "../domain/chartCursor.ts";
 import type { CrosshairStore } from "../hooks/crosshair.ts";
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
-import { useCanvasTheme } from "../hooks/useCanvasTheme.ts";
+import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
+import { useWheelGate } from "../hooks/useWheelGate.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { timeDraw } from "../lib/perfProbe.ts";
 import { mainChartDrawKey } from "./chartDrawKey.ts";
@@ -45,6 +47,10 @@ export interface MainChartProps {
   readonly onPanPrice: (deltaTicks: number) => void;
   /** Returns to the live edge with the default zoom. */
   readonly onReset: () => void;
+  /** Lock is on: a plot drag moves time only, until it has gone `LOCK_RELEASE_DRAG_PX` vertically. */
+  readonly priceLocked?: boolean;
+  /** Called once, when a locked plot drag goes far enough vertically to release Lock. */
+  readonly onReleaseLock?: () => void;
 }
 
 interface Tooltip {
@@ -88,9 +94,21 @@ function readoutFor(model: MainChartModel, cursor: ChartCursor): string {
 interface Pinch {
   dx: number;
   dy: number;
+  readonly startDy: number;
+  /** The vertical gap has left the jitter deadband, so it now zooms price. */
+  priceMoved: boolean;
   readonly zoomX: boolean;
   readonly zoomY: boolean;
   readonly fraction: number;
+}
+
+interface PlotDrag {
+  readonly x: number;
+  readonly y: number;
+  readonly startY: number;
+  readonly pointer: number;
+  /** The drag may move price: Lock was off, or this drag has released it. */
+  readonly priceFree: boolean;
 }
 
 function inPlot(geometry: MainChartGeometry, x: number, y: number): boolean {
@@ -100,17 +118,19 @@ function inPlot(geometry: MainChartGeometry, x: number, y: number): boolean {
 /**
  * The main chart: liquidity heatmap, one-minute candles, EMAs, VWAP, key levels, the agent's overlay and the
  * order-flow markers on shared time and price axes. A wheel over the plot zooms time about the instant under
- * the pointer (Shift+wheel zooms price). A drag that starts inside the plot pans time and price; one finger
+ * the pointer (Shift+wheel zooms price). While a page or container that can scroll cuts the plot off, the wheel scrolls
+ * that instead (D-53). A drag that starts inside the plot pans time and price (time only while Lock holds, until it
+ * goes 4 px vertically, D-54); one finger
  * does the same, and a second finger pinch-zooms. Double-click returns to the auto-fit view. The chart is also a keyboard control: arrows move
  * a cell, Shift+arrows pan, plus and minus zoom, Home returns to the auto-fit view.
  */
-export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomPrice, onPan, onPanPrice, onReset }: MainChartProps) {
+export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked = false, onReleaseLock }: MainChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<MainChartGeometry | null>(null);
   const drawnKey = useRef("");
-  const handlers = useRef({ onZoomTime, onZoomPrice, onPan, onPanPrice, onReset });
+  const handlers = useRef({ onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock });
   const modelRef = useRef(model);
   const announced = useRef<LiveAnnouncement | null>(null);
   const cursorRef = useRef<ChartCursor | null>(null);
@@ -120,16 +140,17 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
   const [liveText, setLiveText] = useState("");
   const { width, height } = useElementSize(wrapRef);
   const fontEpoch = useCanvasFontEpoch();
-  const theme = useCanvasTheme();
+  const palette = useCanvasPalette();
+  const takesWheel = useWheelGate();
 
   useLayoutEffect(() => {
-    handlers.current = { onZoomTime, onZoomPrice, onPan, onPanPrice, onReset };
+    handlers.current = { onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock };
     modelRef.current = model;
     cursorRef.current = cursor;
   });
 
   useEffect(() => {
-    const key = mainChartDrawKey(model, width, height, globalThis.devicePixelRatio || 1, fontEpoch, theme);
+    const key = mainChartDrawKey(model, width, height, globalThis.devicePixelRatio || 1, fontEpoch, palette);
     if (key === drawnKey.current && geometryRef.current) return;
     const surface = prepareSurface(baseRef.current, width, height);
     if (!surface) return;
@@ -147,7 +168,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
     };
     paint();
     return crosshair.subscribe(paint);
-  }, [crosshair, width, height, spec, fontEpoch, theme]);
+  }, [crosshair, width, height, spec, fontEpoch, palette]);
 
   const speak = (text: string, cell: string, immediate: boolean) => {
     const next = nextAnnouncement(announced.current, { text, cell, at: Date.now(), immediate });
@@ -176,7 +197,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
   useEffect(() => {
     const canvas = overlayRef.current;
     if (!canvas) return undefined;
-    let drag: { x: number; y: number; pointer: number } | null = null;
+    let drag: PlotDrag | null = null;
     let pinch: Pinch | null = null;
     const pointers = new Map<number, { x: number; y: number }>();
 
@@ -194,6 +215,8 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
       pinch = {
         dx: Math.max(1, gap.dx),
         dy: Math.max(1, gap.dy),
+        startDy: Math.max(1, gap.dy),
+        priceMoved: false,
         zoomX: gap.dx >= PINCH_AXIS_MIN_PX,
         zoomY: gap.dy >= PINCH_AXIS_MIN_PX,
         fraction: (gap.midX - geometry.plotLeft) / Math.max(1, geometry.plotWidth - geometry.plotLeft),
@@ -209,9 +232,10 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
         handlers.current.onZoomTime(pinch.dx / dx, pinch.fraction);
         pinch = { ...pinch, dx };
       }
-      if (pinch.zoomY && dy !== pinch.dy) {
+      // A pixel of vertical jitter in a sideways pinch is not a price zoom, so Lock stays on, as on Order Flow.
+      if (pinch.zoomY && dy !== pinch.dy && (pinch.priceMoved || pinchZoomsPrice(pinch.startDy, dy))) {
         handlers.current.onZoomPrice(pinch.dy / dy);
-        pinch = { ...pinch, dy };
+        pinch = { ...pinch, dy, priceMoved: true };
       }
     };
 
@@ -232,11 +256,16 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
           const msPerPx = (geometry.time.d1 - geometry.time.d0) / Math.max(1, geometry.plotWidth - geometry.plotLeft);
           handlers.current.onPan(dx * msPerPx);
         }
-        if (dy !== 0) {
+        let priceFree = drag.priceFree || !handlers.current.priceLocked;
+        if (!priceFree && dragReleasesLock(drag.startY, y)) {
+          // The move that releases Lock does not shift price, so the plot does not jump.
+          handlers.current.onReleaseLock?.();
+          priceFree = true;
+        } else if (priceFree && dy !== 0) {
           const ticksPerPx = (geometry.price.d1 - geometry.price.d0) / Math.max(1, geometry.plotHeight);
           handlers.current.onPanPrice(dy * ticksPerPx);
         }
-        drag = { x, y, pointer: drag.pointer };
+        drag = { ...drag, x, y, priceFree };
       }
       const overPlot = inPlot(geometry, x, y);
       const timeMs = overPlot ? geometry.time.fromPx(x) : null;
@@ -285,7 +314,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
       }
       if (event.button !== 0 || !geometry) return;
       if (!inPlot(geometry, x, y)) return;
-      drag = { x, y, pointer: event.pointerId };
+      drag = { x, y, startY: y, pointer: event.pointerId, priceFree: false };
       canvas.setPointerCapture(event.pointerId);
     };
     const up = (event: PointerEvent) => {
@@ -302,6 +331,8 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
       const x = event.offsetX;
       const y = event.offsetY;
       if (!inPlot(geometry, x, y)) return;
+      const plot = { x: geometry.plotLeft, y: 0, w: geometry.plotWidth - geometry.plotLeft, h: geometry.plotHeight };
+      if (!takesWheel(event, canvas, plot)) return;
       const factor = event.deltaY > 0 ? chartZoomOut : chartZoomIn;
       if (event.shiftKey) {
         event.preventDefault();
@@ -329,7 +360,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
       canvas.removeEventListener("wheel", wheel);
       canvas.removeEventListener("dblclick", doubleClick);
     };
-  }, [crosshair]);
+  }, [crosshair, takesWheel]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const place = cursor ?? initialCursor(model.candles, model.startMs, model.endMs, model.lowTicks, model.highTicks);

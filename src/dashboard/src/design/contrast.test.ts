@@ -2,85 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { BOOKMAP_STAGE, WARMUP_BAND_ALPHA } from "../components/drawBookmap.ts";
 import { CELL_TEXT_TOKENS, FOOTPRINT_GROUND, splitCellAlpha } from "../components/drawFootprint.ts";
-import { composite, contrastRatio, mostReadable } from "./color.ts";
+import { composite, contrastRatio, deltaE, mostReadable } from "./color.ts";
+import { GRAPHIC, GRAPHIC_MINIMUM, SURFACES, TEXT, TEXT_MINIMUM } from "./contrastFloors.ts";
 import { THEMES, type ThemeId, type TokenFile, parseTokenFile, resolveColor } from "./tokenFile.ts";
 import { tokens } from "./tokens.ts";
 
 // reference: REQUIREMENTS.md NFR-8 (accessibility); the thresholds are WCAG 2.2 SC 1.4.3 and SC 1.4.11.
 
-const SURFACES = [
-  "surface-lowest",
-  "surface",
-  "surface-low",
-  "surface-container",
-  "surface-high",
-  "surface-highest",
-] as const;
-
-/** Text and text-like marks: 4.5:1 on every surface. */
-const TEXT = [
-  "on-surface",
-  "on-surface-variant",
-  "on-surface-muted",
-  "primary",
-  "up",
-  "down",
-  "danger",
-  "bid",
-  "ask",
-  "bid-strong",
-  "ask-strong",
-  "last-price",
-  "status-live-text",
-  "status-replay-text",
-  "status-simulated",
-  "error",
-  "tpo-letter",
-  "signal-marker",
-] as const;
-
-/** Lines and meaningful borders: 3:1 on every surface. */
-const GRAPHIC = [
-  "outline",
-  "vwap",
-  "support",
-  "reference",
-  "crosshair",
-  "node-hvn",
-  "node-lvn",
-  "node-neutral",
-  "poc",
-  "ema-10",
-  "ema-13",
-  "ema-24",
-  "ema-48",
-  "ema-200",
-  "indicator-rsi",
-  "indicator-macd",
-  "indicator-macd-signal",
-  "indicator-atr",
-  "bias-bullish",
-  "bias-bearish",
-  "bias-neutral",
-  "event-iceberg",
-  "event-stacked-imbalance",
-  "event-unfinished-auction",
-  "event-trapped-traders",
-  "event-cvd-divergence",
-  "event-delta-exhaustion",
-  "event-spoof",
-  "event-liquidity-sweep",
-  "event-single-prints",
-  "event-failed-reclaim",
-  "event-unknown",
-  "price-line",
-  // The warmup line, candles, CVD and volume are stroked marks, held to the line floor.
-  "warmup",
-] as const;
-
-
-const TEXT_MINIMUM = 4.5;
-const GRAPHIC_MINIMUM = 3;
+// The text and graphic lists, the surfaces and the two floors live in contrastFloors.ts, which the chart-colour
+// registry reads too.
 
 /** Text on its own fill: 4.5:1. */
 const PAIRS: readonly (readonly [text: string, fill: string])[] = [
@@ -206,5 +136,67 @@ describe("design tokens contrast", () => {
 
     expect(shortfalls(["grey-text"], TEXT_MINIMUM, boundary)).toHaveLength(12);
     expect(shortfalls(["grey-line"], GRAPHIC_MINIMUM, boundary)).toHaveLength(12);
+  });
+});
+
+// A volume dot's edge is outlined by aggressor side, green for buying and red for selling: a line, so 3:1 on
+// every ground a dot sits on, and over the brighter heat stops the outline or the thin halo outside it carries 3:1.
+const OUTLINES = ["dot-outline-buy", "dot-outline-sell"] as const;
+const OUTLINE_HALO = "dot-outline-halo";
+const BRIGHTER_HEAT = ["heat-25", "heat-50", "heat-75", "heat-100"] as const;
+/** The marks a volume dot is drawn beside: the book's sides, the dot's own fills and every Order Flow event marker. */
+const BESIDE_DOTS = ["bid", "ask", "up", "down", ...GRAPHIC.filter((name) => name.startsWith("event-"))];
+/** ΔE*ab (CIE76) a dot outline keeps from every mark it is drawn beside; about 2.3 is just noticeable. */
+const DISTINCT = 10;
+
+describe("volume dot outlines", () => {
+  it("should hold 3:1 on the six surfaces, heat-0 and the warmup band in both themes when a volume dot is outlined", () => {
+    const failing = THEMES.flatMap((theme) => {
+      const band = composite(resolveColor(tokens, "warmup", theme), WARMUP_BAND_ALPHA, resolveColor(tokens, BOOKMAP_STAGE, theme));
+      const grounds = [...[...SURFACES, "heat-0"].map((name) => [name, resolveColor(tokens, name, theme)] as const), ["warmup band", band] as const];
+      return OUTLINES.flatMap((name) =>
+        grounds
+          .map(([ground, hex]) => ({ key: `${theme} ${name}/${ground}`, value: contrastRatio(resolveColor(tokens, name, theme), hex) }))
+          .filter(({ value }) => value < GRAPHIC_MINIMUM)
+          .map(({ key, value }) => `${key} ${value.toFixed(2)}:1`),
+      );
+    });
+
+    // In the graphic list, so the chart-colour panel holds a viewer's outline colour to the line floor too.
+    expect(OUTLINES.filter((name) => !(GRAPHIC as readonly string[]).includes(name))).toEqual([]);
+    expect(failing).toEqual([]);
+  });
+
+  it("should read on its halo, and keep the outline or its halo at 3:1 on every brighter heat stop, in both themes", () => {
+    const failing = THEMES.flatMap((theme) => {
+      const halo = resolveColor(tokens, OUTLINE_HALO, theme);
+      return OUTLINES.flatMap((name) => {
+        const outline = resolveColor(tokens, name, theme);
+        const onHalo = contrastRatio(outline, halo) < GRAPHIC_MINIMUM ? [`${theme} ${name}/${OUTLINE_HALO} ${contrastRatio(outline, halo).toFixed(2)}:1`] : [];
+        const onHeat = BRIGHTER_HEAT.map((stop) => {
+          const heat = resolveColor(tokens, stop, theme);
+          return { stop, value: Math.max(contrastRatio(outline, heat), contrastRatio(halo, heat)) };
+        })
+          .filter(({ value }) => value < GRAPHIC_MINIMUM)
+          .map(({ stop, value }) => `${theme} ${name} or its halo/${stop} ${value.toFixed(2)}:1`);
+        return [...onHalo, ...onHeat];
+      });
+    });
+
+    expect(failing).toEqual([]);
+  });
+
+  it("should keep each outline distinct from the book, the dot fills, the event markers and the other outline in both themes", () => {
+    const close = THEMES.flatMap((theme) =>
+      OUTLINES.flatMap((name) =>
+        [...BESIDE_DOTS, ...OUTLINES.filter((other) => other !== name)]
+          .map((other) => ({ other, value: deltaE(resolveColor(tokens, name, theme), resolveColor(tokens, other, theme)) }))
+          .filter(({ value }) => value < DISTINCT)
+          .map(({ other, value }) => `${theme} ${name}/${other} ΔE ${value.toFixed(1)}`),
+      ),
+    );
+
+    expect(BESIDE_DOTS).toHaveLength(15);
+    expect(close).toEqual([]);
   });
 });

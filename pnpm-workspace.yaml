@@ -1,3 +1,11 @@
 # The frontends (CONVENTIONS.md §2, §9). pnpm-lock.yaml pins all of them.
 packages:
   - src/dashboard
+
+# Security overrides (CONVENTIONS.md §2, *TypeScript & React*). Each names the advisory it
+# resolves; remove one once its parent pins a patched range itself.
+overrides:
+  # GHSA-3g3m-2fjr-6pw4 (glob, fixed in 14.0.2) and, through glob's own dependency, GHSA-g3hv-75wg-m249 (minimatch,
+  # fixed in 11.0.1). workbox-build 7.4.1, the latest, still pins glob ^11.0.1; it calls only globSync(pattern,
+  # { cwd, follow, ignore }), which glob 14 keeps. Build-time only (vite-plugin-pwa's precache step).
+  workbox-build>glob: ^14.0.2
