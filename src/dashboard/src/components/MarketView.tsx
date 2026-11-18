@@ -9,6 +9,7 @@ import {
   isPaneOn,
   isSideSectionCollapsed,
   isSignalOn,
+  withDetailChart,
   withSideSectionCollapsed,
   type LayoutSettings,
   type PaneId,
@@ -96,8 +97,17 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
   }, [market.minuteHeat, market.developingMinuteHeat, market.heat]);
   const heatColumns = useMemo(() => aggregateHeat(heatSource, bucketMs), [heatSource, bucketMs]);
   const profile = market.profiles.find((item) => item.window === "5d") ?? market.profiles.find((item) => item.window === "session") ?? null;
+  // The footprint is Detail's main chart unless the layout names the price chart (ARCHITECTURE.md D-55).
+  const footprintChart = layout.detailChart === "footprint";
+  const flow = market.orderFlow;
+  const footprintBars = flow.developingFootprint ? [...flow.footprints, flow.developingFootprint] : flow.footprints;
+  // The footprint fits its own bars: the candles reach back past the footprints the server keeps.
+  const footprintValues = footprintChart
+    ? footprintBars.filter((bar) => bar.t + bar.d >= startMs && bar.t <= endMs).flatMap((bar) => [bar.h, bar.l])
+    : [];
   const visibleCandles = candles.filter((c) => c.t + c.d >= startMs && c.t <= endMs);
-  const dataValues = [...visibleCandles.flatMap((c) => [c.h, c.l]), market.liquidity.bestBid, market.liquidity.bestAsk];
+  const priceValues = footprintValues.some((value) => value != null) ? footprintValues : visibleCandles.flatMap((c) => [c.h, c.l]);
+  const dataValues = [...priceValues, market.liquidity.bestBid, market.liquidity.bestAsk];
   const fitted =
     fitRange(dataValues) ??
     fitRange([market.status.coveredLow, market.status.coveredHigh]) ?? { low: 0, high: 100 };
@@ -180,6 +190,10 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     onToggle: () => onReading?.((current) => withSideSectionCollapsed(current, section, !isSideSectionCollapsed(current, section))),
   });
   const lastPriceText = last === null ? "no trades" : `last ${formatTicks(last, spec)}`;
+  const chartSummary = footprintChart
+    ? `${spec.name} ${market.status.provenance.toLowerCase()} footprint chart, ${lastPriceText}, ${flow.footprints.length} closed one-minute footprint bars`
+    : `${spec.name} ${market.status.provenance.toLowerCase()} chart, ${lastPriceText}, ${candles.length} ${layout.chartMinutes}-minute candles`;
+  const chooseChart = (chart: "footprint" | "price") => onReading?.((current) => withDetailChart(current, chart));
 
   return (
     <div className="workspace">
@@ -189,7 +203,16 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
             Trades and quotes only: no depth for this product right now
           </p>
         )}
-        <div className="chart-price-controls" role="toolbar" aria-label="Detail price controls">
+        <div className="chart-price-controls" role="toolbar" aria-label="Detail chart controls">
+          <fieldset>
+            <legend>Main chart</legend>
+            <button type="button" aria-pressed={footprintChart} onClick={() => chooseChart("footprint")}>
+              Footprint
+            </button>
+            <button type="button" aria-pressed={!footprintChart} onClick={() => chooseChart("price")}>
+              Price
+            </button>
+          </fieldset>
           <PriceControls locked={layout.centerPrice} canCenter={anchorTicks != null} actions={priceActions} />
         </div>
         <MainChart
@@ -221,10 +244,19 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
             overlay: paneOn("overlay"),
             signals: chartSignals,
             isKindOn: kindOn,
+            footprint: footprintChart
+              ? {
+                  bars: flow.footprints,
+                  developing: flow.developingFootprint ?? null,
+                  missingRanges: market.profiles.flatMap((item) => item.missingRanges),
+                  approximateRanges: market.profiles.flatMap((item) => item.approximateRanges),
+                }
+              : null,
           }}
           spec={spec}
           crosshair={crosshair}
-          summary={`${spec.name} ${market.status.provenance.toLowerCase()} chart, ${lastPriceText}, ${candles.length} ${layout.chartMinutes}-minute candles`}
+          summary={chartSummary}
+          label={footprintChart ? "Footprint" : "Price, liquidity and order flow"}
           onZoomTime={zoomTime}
           onZoomPrice={priceActions.zoomBy}
           onPan={pan}
@@ -236,6 +268,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
         <IndicatorDock
           market={market}
           layout={layout}
+          candles={candles}
           indicators={indicators}
           startMs={startMs}
           endMs={endMs}

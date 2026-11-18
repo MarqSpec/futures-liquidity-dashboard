@@ -65,7 +65,7 @@ function lastPrice(): number {
 }
 
 function plotMidY(): number {
-  return bookmapFrame(800, 600, { volume: true, cvd: true }).plot.h / 2;
+  return bookmapFrame(800, 600).plot.h / 2;
 }
 
 function withPrint(priceTicks: number, base: MarketState = market): MarketState {
@@ -158,18 +158,14 @@ describe("BookmapView price zoom and vertical drag", () => {
     expect(latest.priceZoom).toBeCloseTo(20 * chartZoomIn);
   });
 
-  it("should not pan when the pointer starts on the dock or the volume strip", () => {
+  // The volume strip under the plot went; the indicator dock is outside the stage.
+  it("should not pan when the pointer starts on the COB or SVP column", () => {
     const { stage } = renderView();
     const before = priceAt(stage, 200);
 
     fireEvent.pointerDown(stage, { button: 0, clientX: 700, clientY: 200, pointerId: 3 });
     fireEvent.pointerMove(stage, { clientX: 700, clientY: 400, pointerId: 3 });
     fireEvent.pointerUp(stage, { clientX: 700, clientY: 400, pointerId: 3 });
-    expect(priceAt(stage, 200)).toBe(before);
-
-    fireEvent.pointerDown(stage, { button: 0, clientX: 100, clientY: 540, pointerId: 4 });
-    fireEvent.pointerMove(stage, { clientX: 100, clientY: 200, pointerId: 4 });
-    fireEvent.pointerUp(stage, { clientX: 100, clientY: 200, pointerId: 4 });
     expect(priceAt(stage, 200)).toBe(before);
   });
 
@@ -313,7 +309,7 @@ describe("BookmapView price zoom and vertical drag", () => {
     const { stage } = renderView(() => undefined, withEvent);
     // Aim at a dot instead of scanning the plot: price and time are linear in the pointer position, so two probes
     // of the hover readout give the price scale and the frame gives the time scale. About a dozen moves, not 2,500.
-    const frame = bookmapFrame(800, 600, { volume: true, cvd: true });
+    const frame = bookmapFrame(800, 600);
     const view = defaultWindow(5);
     const endMs = market.serverTimeMs + view.spanMs * LIVE_EDGE_PAD - view.offsetMs;
     const x = frame.plot.x + ((market.serverTimeMs - 30_000 - (endMs - view.spanMs)) / view.spanMs) * frame.plot.w;
@@ -406,7 +402,7 @@ describe("BookmapView price zoom and vertical drag", () => {
       />,
     );
     const key = screen.getByLabelText("Event key");
-    const frame = bookmapFrame(800, 600, { volume: true, cvd: true });
+    const frame = bookmapFrame(800, 600);
     expect(key.style.right).toBe(`${800 - frame.plot.w + 8}px`);
     expect(800 - frame.plot.w).toBe(268);
     expect(key.style.pointerEvents).toBe("none");
@@ -602,7 +598,7 @@ describe("BookmapView wheel while the page scrolls", () => {
     );
   }
 
-  // Positions inside the stage: the plot, the PRICE column and the time strip.
+  // Positions inside the stage: the plot and the PRICE column. The time strip under the plot went.
   function wheelOn(stage: HTMLElement, x: number, y: number, timeStamp: number, shiftKey = false): WheelEvent {
     const top = stage.getBoundingClientRect().top;
     const event = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -40, shiftKey, clientX: x, clientY: top + y });
@@ -615,7 +611,6 @@ describe("BookmapView wheel while the page scrolls", () => {
     ["a plain wheel on the plot", 120, 200, false],
     ["Shift+wheel on the plot", 120, 200, true],
     ["a wheel on the PRICE column", 560, 200, false],
-    ["a wheel on the time strip", 120, 500, false],
   ])("should let the page scroll and leave the window alone when %s lands on a plot cut off by the bottom of the viewport", (_name, x, y, shiftKey) => {
     const onWindow = vi.fn();
     const { stage } = renderView(onWindow);
@@ -664,12 +659,21 @@ describe("BookmapView wheel while the page scrolls", () => {
     expect(onWindow).toHaveBeenCalledTimes(1);
   });
 
-  it("should zoom when the plot is in view even though the strips under it are cut off", () => {
+  // — the strips under
+  // the plot became the indicator dock under the stage; only the plot has to be in view.
+  it("should zoom when the stage is wholly in view even though the indicator dock under it is cut off", () => {
     const onWindow = vi.fn();
     const { stage } = renderView(onWindow);
-    const plot = bookmapFrame(800, 600, { volume: true, cvd: true }).plot;
+    const plot = bookmapFrame(800, 600).plot;
     placeStage(stage, window.innerHeight - plot.y - plot.h - 10);
+    const dock = stage.parentElement?.querySelector(".indicator-dock");
+    if (!(dock instanceof HTMLElement)) throw new Error("the indicator dock is missing");
+    const dockTop = window.innerHeight - 10;
+    vi.spyOn(dock, "getBoundingClientRect").mockImplementation(
+      () => ({ x: 0, y: dockTop, left: 0, top: dockTop, right: 800, bottom: dockTop + 168, width: 800, height: 168, toJSON: () => ({}) }) as DOMRect,
+    );
 
+    expect(dock.getBoundingClientRect().bottom).toBeGreaterThan(window.innerHeight);
     const event = wheelOn(stage, 120, plot.y + plot.h / 2, 1_000);
 
     expect(event.defaultPrevented).toBe(true);

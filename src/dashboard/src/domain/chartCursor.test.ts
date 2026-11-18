@@ -9,6 +9,8 @@ import {
   clampCursor,
   cursorFromTime,
   focusedBarReadout,
+  footprintCursorBars,
+  footprintReadout,
   initialCursor,
   nextAnnouncement,
 } from "./chartCursor.ts";
@@ -153,6 +155,41 @@ describe("focusedBarReadout", () => {
     });
 
     expect(text).toContain("no depth at this price");
+  });
+});
+
+describe("footprintReadout", () => {
+  const bar = { t: 1_700_000_000_000, d: 60_000, o: 100, h: 102, l: 99, cl: 101, v: 21, delta: 5, maxDelta: 6, minDelta: -1, c: [102, 1, 3, 0, 100, 4, 6, 1, 99, 2, 5, 0] };
+
+  it("should read the traded bid and ask of the footprint cell at the focused price, the bar's delta and volume", () => {
+    const text = footprintReadout({ root: "MES", spec, bar, priceTicks: 100 });
+
+    expect(text).toContain("MES");
+    expect(text).toMatch(/UTC[+-]\d+/);
+    expect(text).toContain("volume 21");
+    expect(text).toContain("delta +5");
+    expect(text).toContain("25.00 traded bid 4 × ask 6");
+    expect(text).not.toMatch(/coverage|OHLC|resting/);
+  });
+
+  it("should say nothing traded when the focused price has no footprint cell", () => {
+    expect(footprintReadout({ root: "MES", spec, bar, priceTicks: 101 })).toContain("25.25 no trades at this price");
+    expect(footprintReadout({ root: "MES", spec, bar: null, priceTicks: 101 })).toBe("MES, no footprint bar in view");
+  });
+});
+
+describe("footprintCursorBars", () => {
+  it("should step by each footprint column, the forming one last, and leave out a column with no trades", () => {
+    const closed = { t: 0, d: 60_000, o: 10, h: 12, l: 9, cl: 11, v: 4, delta: 1, maxDelta: 1, minDelta: 0, c: [10, 1, 3, 0] };
+    const empty = { t: 60_000, d: 60_000, v: 0, delta: 0, maxDelta: 0, minDelta: 0, c: [] };
+    const forming = { t: 120_000, d: 60_000, o: 11, h: 13, l: 11, cl: 12, v: 2, delta: -2, maxDelta: 0, minDelta: -2, c: [12, 2, 0, 0] };
+
+    const bars = footprintCursorBars([closed, empty], forming);
+
+    expect(bars.map((item) => [item.t, item.d, item.h, item.l, item.c, item.developing])).toEqual([
+      [0, 60_000, 12, 9, 11, false],
+      [120_000, 60_000, 13, 11, 12, true],
+    ]);
   });
 });
 

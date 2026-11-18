@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { aggregateCandles } from "../domain/candles.ts";
 import { defaultLayout, type IndicatorPaneId, type LayoutSettings } from "../domain/layout.ts";
 import { fromSnapshot } from "../domain/merge.ts";
 import type { ViewWindow } from "../domain/viewWindow.ts";
@@ -22,6 +23,7 @@ vi.stubGlobal(
 );
 
 const market = fromSnapshot(snapshotFixture(), 5, 0);
+const candles = aggregateCandles(market.bars, market.developingBar, market.serverTimeMs);
 
 function WindowHarness() {
   const held = { spanMs: 180_000, offsetMs: 90_000, priceZoom: 1 } satisfies ViewWindow;
@@ -58,6 +60,7 @@ function DockHarness({ pane, collapsed = false }: { readonly pane?: IndicatorPan
       <IndicatorDock
         market={market}
         layout={layout}
+        candles={candles}
         indicators={market.indicators}
         startMs={market.serverTimeMs - 60_000}
         endMs={market.serverTimeMs}
@@ -74,14 +77,33 @@ describe("IndicatorDock", () => {
     cleanup();
   });
 
-  it("should show the footprint pane when the layout leaves the tab unset", () => {
+  it("should show the volume pane when the layout leaves the tab unset", () => {
     render(<DockHarness />);
 
-    expect(screen.getByRole("tab", { name: "Footprint", selected: true })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Volume", selected: true })).toBeTruthy();
     expect(screen.getByRole("tabpanel").tabIndex).toBe(0);
-    expect(screen.getByRole("region", { name: "Footprint" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Volume" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "RSI 14" })).toBeNull();
     expect(screen.queryByRole("region", { name: "TPO profile" })).toBeNull();
+  });
+
+  it("should offer Volume, CVD, RSI, MACD, ATR and TPO and no footprint tab when the footprint is the main chart", () => {
+    render(<DockHarness />);
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Volume", "CVD", "RSI", "MACD", "ATR", "TPO"]);
+    expect(screen.queryByRole("tab", { name: "Footprint" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Footprint" })).toBeNull();
+  });
+
+  it("should open the volume tab and save it when the viewer picks Volume", async () => {
+    const user = userEvent.setup();
+    render(<DockHarness pane="cvd" />);
+
+    await user.click(screen.getByRole("tab", { name: "Volume" }));
+
+    expect(screen.getByRole("tab", { name: "Volume", selected: true })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Volume" })).toBeTruthy();
+    expect(screen.getByTestId("saved").textContent).toBe("volume:expanded");
   });
 
   it("should show only the selected pane when the layout names RSI", () => {
@@ -89,7 +111,7 @@ describe("IndicatorDock", () => {
 
     expect(screen.getByRole("tab", { name: "RSI", selected: true })).toBeTruthy();
     expect(screen.getByRole("region", { name: "RSI 14" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Footprint" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Volume" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Cumulative volume delta" })).toBeNull();
   });
 
@@ -101,7 +123,7 @@ describe("IndicatorDock", () => {
 
     expect(screen.getByRole("tab", { name: "MACD", selected: true })).toBeTruthy();
     expect(screen.getByRole("region", { name: "MACD 12/26/9" })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "Footprint" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Volume" })).toBeNull();
   });
 
   it("should keep an off-live window when the indicator tab changes", async () => {
@@ -172,26 +194,26 @@ describe("IndicatorDock", () => {
     render(<DockHarness />);
 
     const tab = (name: string) => screen.getByRole("tab", { name, selected: true });
-    screen.getByRole("tab", { name: "Footprint" }).focus();
+    screen.getByRole("tab", { name: "Volume" }).focus();
 
     await user.keyboard("{ArrowRight}");
     expect(document.activeElement).toBe(tab("CVD"));
 
     await user.keyboard("{ArrowLeft}");
-    expect(document.activeElement).toBe(tab("Footprint"));
+    expect(document.activeElement).toBe(tab("Volume"));
 
     await user.keyboard("{ArrowLeft}");
     expect(document.activeElement).toBe(tab("TPO"));
-    expect(screen.queryByRole("region", { name: "Footprint" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Volume" })).toBeNull();
 
     await user.keyboard("{ArrowRight}");
-    expect(document.activeElement).toBe(tab("Footprint"));
+    expect(document.activeElement).toBe(tab("Volume"));
 
     await user.keyboard("{End}");
     expect(document.activeElement).toBe(tab("TPO"));
 
     await user.keyboard("{Home}");
-    expect(document.activeElement).toBe(tab("Footprint"));
-    expect(screen.getByRole("region", { name: "Footprint" })).toBeTruthy();
+    expect(document.activeElement).toBe(tab("Volume"));
+    expect(screen.getByRole("region", { name: "Volume" })).toBeTruthy();
   });
 });

@@ -42,16 +42,3 @@ export function footprintPoc(cells: readonly FootprintCell[]): number | null {
   return best === null || best.bid + best.ask === 0 ? null : best.priceTicks;
 }
 
-/**
- * The rows a footprint pane draws for several bars: every price that traded in any of them, highest first. Prices
- * nobody traded are left out, so two clusters far apart do not leave the pane empty in between.
- */
-export function footprintRows(bars: readonly (readonly FootprintCell[])[]): number[] {
-  const prices = new Set<number>();
-  for (const cells of bars) {
-    for (const cell of cells) {
-      prices.add(cell.priceTicks);
-    }
-  }
-  return [...prices].sort((a, b) => b - a);
-}

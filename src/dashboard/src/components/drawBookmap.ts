@@ -8,19 +8,17 @@ import {
   type BookmapFrame,
   type CobColumn,
   type FailedReclaim,
-  type LiveCvdSummary,
   type NamedGuide,
   type PriceStep,
   type SliceDot,
   type SvpLevel,
   type TrailGuide,
-  type VolumeStripBar,
   bookmapScales,
   heatLevelAlpha,
   heatMetric,
 } from "../domain/bookmap.ts";
 import type { TickSpec } from "../domain/format.ts";
-import { formatLocalMinute, formatQty, formatSigned, formatTicks } from "../domain/format.ts";
+import { formatLocalMinute, formatQty, formatTicks } from "../domain/format.ts";
 import { firstColumnEndingAfter, forEachHeatCell, logIntensity } from "../domain/heat.ts";
 import { autoContrastDomain, bookmapColor, rampT } from "../domain/heatRamp.ts";
 import type { HeatMode } from "../domain/layout.ts";
@@ -72,12 +70,10 @@ const palette = themed((theme) => ({
   priceLineHaloWarmup: themeColor("price-line-halo-warmup", theme),
 }));
 
-/** label-sm: column heads and the CVD overline, set in capitals. */
+/** label-sm: column heads, set in capitals. */
 const LABEL_SM = orderFlowFonts.label;
 const DATA_XS = fonts.xs;
 const DATA_SM = fonts.sm;
-/** data-xl: the live CVD value. */
-const DATA_XL = orderFlowFonts.cvd;
 const DOT_LABEL = fonts.mark;
 /** Stroke width of the dot label's halo: 1.5px of halo outside each glyph edge. */
 const DOT_LABEL_HALO = 3;
@@ -115,9 +111,6 @@ export interface BookmapDrawModel {
   readonly guide: TrailGuide | null;
   readonly cob: CobColumn;
   readonly svp: readonly SvpLevel[];
-  readonly volume: readonly VolumeStripBar[];
-  readonly cvdPoints: readonly (readonly [number, number])[];
-  readonly cvdSummary: LiveCvdSummary;
   readonly spec: TickSpec;
   readonly lastPriceTicks: number | null;
   readonly hover: { readonly timeMs: number; readonly priceTicks: number } | null;
@@ -153,9 +146,6 @@ export function drawBookmap(surface: Surface, model: BookmapDrawModel): BookmapH
   drawPriceColumn(ctx, model, scales);
   drawCob(ctx, model, scales);
   drawSvp(ctx, model, scales);
-  if (frame.volume) drawVolume(ctx, model, scales, frame.volume);
-  if (frame.cvd) drawCvd(ctx, model, scales, frame.cvd);
-  if (frame.cvdBox) drawCvdBox(ctx, model, frame.cvdBox);
   drawHeaders(ctx, frame);
   if (model.hover) drawHover(ctx, model, scales);
   return heat;
@@ -642,106 +632,7 @@ function drawSvp(
   }
 }
 
-function drawVolume(
-  ctx: CanvasRenderingContext2D,
-  model: BookmapDrawModel,
-  scales: ReturnType<typeof bookmapScales>,
-  box: BookmapFrame["volume"] & object,
-): void {
-  ctx.fillStyle = palette.dock;
-  ctx.fillRect(box.x, box.y, box.w, box.h);
-  let max = 1;
-  for (const bar of model.volume) max = Math.max(max, bar.buy + bar.sell);
-  for (const bar of model.volume) {
-    if (bar.t + bar.d < model.startMs || bar.t > model.endMs) continue;
-    const x0 = scales.time.toPx(bar.t);
-    const x1 = scales.time.toPx(bar.t + bar.d);
-    const width = Math.max(1, x1 - x0 - 1);
-    const total = bar.buy + bar.sell;
-    const h = (total / max) * (box.h - 8);
-    const y = box.y + box.h - 4 - h;
-    if (bar.warmup || total <= 0) {
-      ctx.fillStyle = palette.warmup;
-      ctx.fillRect(x0, y, width, Math.max(1, h));
-      continue;
-    }
-    const sellH = (bar.sell / total) * h;
-    ctx.fillStyle = palette.sell;
-    ctx.fillRect(x0, y, width, sellH);
-    ctx.fillStyle = palette.buy;
-    ctx.fillRect(x0, y + sellH, width, h - sellH);
-  }
-}
-
-function drawCvd(
-  ctx: CanvasRenderingContext2D,
-  model: BookmapDrawModel,
-  scales: ReturnType<typeof bookmapScales>,
-  box: NonNullable<BookmapFrame["cvd"]>,
-): void {
-  ctx.fillStyle = palette.dock;
-  ctx.fillRect(box.x, box.y, box.w, box.h);
-  if (!model.cvdSummary.cvdKnown) return;
-  const points = model.cvdPoints.filter((point) => point[0] >= model.startMs && point[0] <= model.endMs);
-  if (points.length === 0) return;
-  let low = Number.POSITIVE_INFINITY;
-  let high = Number.NEGATIVE_INFINITY;
-  for (const point of points) {
-    low = Math.min(low, point[1]);
-    high = Math.max(high, point[1]);
-  }
-  if (low === high) {
-    low -= 1;
-    high += 1;
-  }
-  const yOf = (value: number) => box.y + 8 + ((high - value) / (high - low)) * (box.h - 16);
-  const mark = model.historyWatermarkMs;
-  const cvd = model.cvdSummary.cvd;
-  // The live stretch takes the direction of the live CVD; flat is neither.
-  const live = cvd > 0 ? palette.up : cvd < 0 ? palette.down : palette.text;
-  ctx.lineWidth = 1.4;
-  ctx.lineJoin = "miter";
-  ctx.beginPath();
-  let pen: string | null = null;
-  for (const point of points) {
-    const warmup = mark !== null && point[0] <= mark;
-    const hue = warmup ? palette.warmup : live;
-    const x = scales.time.toPx(point[0]);
-    const y = yOf(point[1]);
-    if (pen !== hue) {
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.strokeStyle = hue;
-      ctx.moveTo(x, y);
-      pen = hue;
-    } else {
-      ctx.lineTo(x, y);
-    }
-  }
-  ctx.stroke();
-}
-
-/** The live CVD card: an overline, the signed value with its direction colour, the last print, the warmup line. */
-function drawCvdBox(ctx: CanvasRenderingContext2D, model: BookmapDrawModel, box: NonNullable<BookmapFrame["cvdBox"]>): void {
-  const summary = model.cvdSummary;
-  const left = box.x + 12;
-  ctx.fillStyle = palette.card;
-  ctx.fillRect(box.x, box.y, box.w, box.h);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  overline(ctx, "LIVE CVD", left, box.y + 6);
-  ctx.font = DATA_XL;
-  ctx.fillStyle = !summary.cvdKnown ? palette.muted : summary.cvd > 0 ? palette.up : summary.cvd < 0 ? palette.down : palette.strong;
-  ctx.fillText(summary.cvdKnown ? formatSigned(summary.cvd) : "unknown", left, box.y + 22);
-  ctx.font = DATA_SM;
-  ctx.fillStyle = palette.muted;
-  const last = summary.lastPriceTicks;
-  const qty = summary.lastQuantity;
-  ctx.fillText(last === null || qty === null ? "Last —" : `Last ${formatTicks(last, model.spec)} × ${formatQty(qty)}`, left, box.y + 47);
-  ctx.fillText("Warmup CVD: 0 (no side)", left, box.y + 62);
-}
-
-/** label-sm in capitals, muted: the column heads and the CVD overline. */
+/** label-sm in capitals, muted: the column heads. */
 function overline(ctx: CanvasRenderingContext2D, text: string, x: number, y: number): void {
   ctx.font = LABEL_SM;
   ctx.fillStyle = palette.muted;

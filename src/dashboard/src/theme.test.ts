@@ -29,6 +29,7 @@ describe("theme", () => {
       unknown: "#3a3f4b",
       aggressorBuy: "#6f84ff",
       aggressorSell: "#b0b0b0",
+      warmup: "#686e79",
       vwap: "#e040fb",
       crosshair: "#9aa5b8",
       lastPrice: "#ffd54f",

@@ -28,6 +28,22 @@ describe("indicator dock", () => {
     expect(declaration(rules.get(".indicator-dock"), "flex")).toBe("2.4 1 0");
   });
 
+  it("should give the Order Flow stage the Detail chart's share of the height when the dock sits under it", () => {
+    const stage = declaration(rules.get(".bookmap-stage"), "flex");
+
+    expect(stage).toBe(declaration(rules.get(".pane-main"), "flex"));
+    expect(stage).toBe("5 1 0");
+  });
+
+  it("should keep the Order Flow stage's and the dock's minimums within the 420 px the stage and its strips took, so the readout stays in the chart row", () => {
+    const px = (value: string | undefined) => Number(/(\d+(?:\.\d+)?)px/.exec(value ?? "")?.[1] ?? Number.NaN);
+    const stage = px(declaration(rules.get(".bookmap-stage"), "min-height"));
+    const dock = px(declaration(rules.get(".indicator-dock"), "min-height"));
+
+    expect(dock).toBe(168);
+    expect(stage + dock).toBeLessThanOrEqual(420);
+  });
+
   it("should keep the collapse button out of the scrolling tab list when the strip is narrow", () => {
     expect(declaration(rules.get(".indicator-strip"), "display")).toBe("flex");
     expect(declaration(rules.get(".indicator-tabs"), "flex")).toBe("1 1 auto");

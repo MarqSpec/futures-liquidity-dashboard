@@ -4,6 +4,7 @@ import { PINCH_AXIS_MIN_PX } from "../domain/bookmap.ts";
 import { dragReleasesLock, pinchZoomsPrice } from "../domain/priceLock.ts";
 import type { TickSpec } from "../domain/format.ts";
 import type { HeatColumn } from "../api/schemas.ts";
+import type { Candle } from "../domain/candles.ts";
 import {
   chartKeyHint,
   chartZoomIn,
@@ -13,6 +14,8 @@ import {
   cursorFromTime,
   chartKeyAction,
   focusedBarReadout,
+  footprintCursorBars,
+  footprintReadout,
   initialCursor,
   nextAnnouncement,
   type ChartCursor,
@@ -26,7 +29,8 @@ import { useWheelGate } from "../hooks/useWheelGate.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { timeDraw } from "../lib/perfProbe.ts";
 import { mainChartDrawKey } from "./chartDrawKey.ts";
-import { drawMainChart, drawMainCrosshair, type MainChartGeometry, type MainChartModel, type Marker } from "./drawMainChart.ts";
+import { drawFootprint, type FootprintModel } from "./drawFootprint.ts";
+import { drawMainChart, drawMainCrosshair, type FootprintLayer, type MainChartGeometry, type MainChartModel, type Marker } from "./drawMainChart.ts";
 
 /** Props of the main chart. */
 export interface MainChartProps {
@@ -34,6 +38,8 @@ export interface MainChartProps {
   readonly spec: TickSpec;
   readonly crosshair: CrosshairStore;
   readonly summary: string;
+  /** The chart region's accessible name. */
+  readonly label?: string;
   /**
    * Zooms time by `factor` (> 1 shows more). `anchorFraction` is the plot position to keep (0 left, 1 right).
    * Returns false when the window cannot move, so the wheel can scroll the page.
@@ -80,7 +86,18 @@ function columnAt(columns: readonly HeatColumn[], timeMs: number): HeatColumn | 
   return null;
 }
 
+/** The bars the cursor stops on: the footprint columns on the footprint chart, the candles on the price chart. */
+function cursorBars(model: MainChartModel): readonly Candle[] {
+  return model.footprint ? footprintCursorBars(model.footprint.bars, model.footprint.developing) : model.candles;
+}
+
 function readoutFor(model: MainChartModel, cursor: ChartCursor): string {
+  const layer = model.footprint;
+  if (layer) {
+    // — the cell's traded volume, never the resting depth this chart does not draw
+    const bar = layer.developing?.t === cursor.barT ? layer.developing : (layer.bars.find((item) => item.t === cursor.barT) ?? null);
+    return footprintReadout({ root: model.market.instrument.root, spec: model.market.instrument, bar, priceTicks: cursor.priceTicks });
+  }
   const candle = model.candles.find((item) => item.t === cursor.barT) ?? null;
   return focusedBarReadout({
     root: model.market.instrument.root,
@@ -111,20 +128,39 @@ interface PlotDrag {
   readonly priceFree: boolean;
 }
 
+/** The footprint main chart's model: the price chart's window and last price, with the footprint bars. */
+function footprintModelOf(model: MainChartModel, layer: FootprintLayer): FootprintModel {
+  const status = model.market.status;
+  return {
+    startMs: model.startMs,
+    endMs: model.endMs,
+    lowTicks: model.lowTicks,
+    highTicks: model.highTicks,
+    bars: layer.bars,
+    developing: layer.developing,
+    spec: model.market.instrument,
+    missingRanges: layer.missingRanges,
+    approximateRanges: layer.approximateRanges,
+    lastTicks: model.candles.at(-1)?.c ?? null,
+    watermark: status.code === "LIVE" ? null : status.code === "DEGRADED" ? "DEGRADED" : status.provenance,
+  };
+}
+
 function inPlot(geometry: MainChartGeometry, x: number, y: number): boolean {
   return x >= geometry.plotLeft && x <= geometry.plotWidth && y >= 0 && y <= geometry.plotHeight;
 }
 
 /**
  * The main chart: liquidity heatmap, one-minute candles, EMAs, VWAP, key levels, the agent's overlay and the
- * order-flow markers on shared time and price axes. A wheel over the plot zooms time about the instant under
+ * order-flow markers on shared time and price axes, or, when the model carries a footprint layer, the footprint on the
+ * same axes. Both take the same pointer, wheel and keys. A wheel over the plot zooms time about the instant under
  * the pointer (Shift+wheel zooms price). While a page or container that can scroll cuts the plot off, the wheel scrolls
  * that instead (D-53). A drag that starts inside the plot pans time and price (time only while Lock holds, until it
  * goes 4 px vertically, D-54); one finger
  * does the same, and a second finger pinch-zooms. Double-click returns to the auto-fit view. The chart is also a keyboard control: arrows move
  * a cell, Shift+arrows pan, plus and minus zoom, Home returns to the auto-fit view.
  */
-export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked = false, onReleaseLock }: MainChartProps) {
+export function MainChart({ model, spec, crosshair, summary, label = "Price, liquidity and order flow", onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked = false, onReleaseLock }: MainChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -154,7 +190,8 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
     if (key === drawnKey.current && geometryRef.current) return;
     const surface = prepareSurface(baseRef.current, width, height);
     if (!surface) return;
-    geometryRef.current = timeDraw(() => drawMainChart(surface, model));
+    const layer = model.footprint;
+    geometryRef.current = timeDraw(() => (layer ? drawFootprint(surface, footprintModelOf(model, layer)) : drawMainChart(surface, model)));
     drawnKey.current = key;
   });
 
@@ -177,14 +214,14 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
     setLiveText(next.text);
   };
 
-  const clamped = cursor ? clampCursor(cursor, model.candles, model.startMs, model.endMs, model.lowTicks, model.highTicks) : cursor;
+  const clamped = cursor ? clampCursor(cursor, cursorBars(model), model.startMs, model.endMs, model.lowTicks, model.highTicks) : cursor;
   if (cursor && (!clamped || clamped.barT !== cursor.barT || clamped.priceTicks !== cursor.priceTicks)) {
     setCursor(clamped);
   }
 
   useEffect(() => {
     if (!cursor) return;
-    const candle = modelRef.current.candles.find((item) => item.t === cursor.barT);
+    const candle = cursorBars(modelRef.current).find((item) => item.t === cursor.barT);
     crosshair.set({ timeMs: candle ? candle.t + candle.d / 2 : cursor.barT, priceTicks: cursor.priceTicks });
   }, [cursor, crosshair]);
 
@@ -273,7 +310,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
       crosshair.set({ timeMs, priceTicks });
       if (timeMs !== null && priceTicks !== null) {
         const current = modelRef.current;
-        const next = cursorFromTime(current.candles, current.startMs, current.endMs, timeMs, priceTicks, current.lowTicks, current.highTicks);
+        const next = cursorFromTime(cursorBars(current), current.startMs, current.endMs, timeMs, priceTicks, current.lowTicks, current.highTicks);
         setHover((held) => {
           if (!next) return held === null ? held : null;
           if (held && held.barT === next.barT && held.priceTicks === next.priceTicks) return held;
@@ -299,7 +336,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
         return;
       }
       const current = modelRef.current;
-      const candle = current.candles.find((item) => item.t === place.barT);
+      const candle = cursorBars(current).find((item) => item.t === place.barT);
       crosshair.set({ timeMs: candle ? candle.t + candle.d / 2 : place.barT, priceTicks: place.priceTicks });
     };
     const down = (event: PointerEvent) => {
@@ -363,9 +400,9 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
   }, [crosshair, takesWheel]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const place = cursor ?? initialCursor(model.candles, model.startMs, model.endMs, model.lowTicks, model.highTicks);
+    const place = cursor ?? initialCursor(cursorBars(model), model.startMs, model.endMs, model.lowTicks, model.highTicks);
     if (!place) return;
-    const action = chartKeyAction(event.key, event.shiftKey, place, model.candles, model.startMs, model.endMs, model.lowTicks, model.highTicks);
+    const action = chartKeyAction(event.key, event.shiftKey, place, cursorBars(model), model.startMs, model.endMs, model.lowTicks, model.highTicks);
     if (!action) return;
     event.preventDefault();
     if (action.type === "dismiss") {
@@ -400,7 +437,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
   const visibleReadout = visibleCell ? readoutFor(model, visibleCell) : "";
 
   return (
-    <section className="pane pane-main" aria-label="Price, liquidity and order flow">
+    <section className="pane pane-main" aria-label={label}>
       {/* A canvas chart has no native interactive element. role=application is the widget that owns the keys. */}
       {/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <div
@@ -413,7 +450,7 @@ export function MainChart({ model, spec, crosshair, summary, onZoomTime, onZoomP
         aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight + - Home Escape"
         onKeyDown={onKeyDown}
         onFocus={() => {
-          setCursor((current) => current ?? initialCursor(model.candles, model.startMs, model.endMs, model.lowTicks, model.highTicks));
+          setCursor((current) => current ?? initialCursor(cursorBars(model), model.startMs, model.endMs, model.lowTicks, model.highTicks));
         }}
       >
       {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}

@@ -46,8 +46,8 @@ import {
 const spec = { tickSize: 0.25, priceDecimals: 2 };
 
 describe("bookmapFrame", () => {
-  it("should keep PRICE, COB and SVP on the plot's price span when the strip and CVD are on", () => {
-    const frame = bookmapFrame(1000, 700, { volume: true, cvd: true });
+  it("should keep PRICE, COB and SVP on the plot's price span when a frame is laid out", () => {
+    const frame = bookmapFrame(1000, 700);
 
     expect(frame.price.y).toBe(frame.plot.y);
     expect(frame.cob.y).toBe(frame.plot.y);
@@ -55,28 +55,21 @@ describe("bookmapFrame", () => {
     expect(frame.price.h).toBe(frame.plot.h);
     expect(frame.cob.h).toBe(frame.plot.h);
     expect(frame.svp.h).toBe(frame.plot.h);
-    expect(frame.volume?.y).toBe(frame.plot.y + frame.plot.h);
-    expect(frame.cvd?.y).toBe((frame.volume?.y ?? 0) + (frame.volume?.h ?? 0));
-    expect(frame.cvdBox?.x).toBe(frame.price.x);
-    expect(frame.cvdBox?.y).toBe(frame.cvd?.y);
-    expect(frame.cvdBox?.w).toBe(frame.price.w + frame.cob.w + frame.svp.w);
   });
 
-  it("should drop the volume strip and the CVD box when those layers are off", () => {
-    const frame = bookmapFrame(800, 400, { volume: false, cvd: false });
+  it("should give the plot the stage's whole height and lay out no volume strip or CVD box when the dock below carries them", () => {
+    const frame = bookmapFrame(800, 400);
 
-    expect(frame.volume).toBeNull();
-    expect(frame.cvd).toBeNull();
-    expect(frame.cvdBox).toBeNull();
-    expect(frame.plot.h).toBe(400);
+    expect(frame.plot).toEqual({ x: 0, y: 0, w: 800 - (76 + 96 + 96), h: 400 });
+    expect(Object.keys(frame).sort()).toEqual(["cob", "plot", "price", "svp"]);
   });
 
   it("should shrink the dock on a narrow stage so the plot keeps most of the width", () => {
-    const wide = bookmapFrame(1000, 600, { volume: false, cvd: false });
+    const wide = bookmapFrame(1000, 600);
     expect(wide.price.w + wide.cob.w + wide.svp.w).toBe(76 + 96 + 96);
     expect(bookmapDockWidths(1000)).toEqual({ price: 76, cob: 96, svp: 96 });
 
-    const narrow = bookmapFrame(360, 640, { volume: true, cvd: true });
+    const narrow = bookmapFrame(360, 640);
     const dock = narrow.price.w + narrow.cob.w + narrow.svp.w;
     expect(dock).toBeLessThan(268);
     expect(narrow.plot.w).toBeGreaterThan(dock);
@@ -88,7 +81,7 @@ describe("bookmapFrame", () => {
 
 describe("alignPrices", () => {
   it("should put a COB price and the session profile price on the same y as the price scale", () => {
-    const frame = bookmapFrame(1000, 600, { volume: true, cvd: true });
+    const frame = bookmapFrame(1000, 600);
     const { price } = bookmapScales(frame, 0, 60_000, 90, 110);
     const cob = cobColumn({
       bookKnown: true,

@@ -62,6 +62,7 @@ function sameLayout(left: LayoutSettings, right: LayoutSettings): boolean {
     left.centerPrice === right.centerPrice &&
     left.indicatorPane === right.indicatorPane &&
     left.indicatorDockCollapsed === right.indicatorDockCollapsed &&
+    left.detailChart === right.detailChart &&
     left.sideSectionsCollapsed.length === right.sideSectionsCollapsed.length &&
     left.sideSectionsCollapsed.every((key, index) => key === right.sideSectionsCollapsed[index]) &&
     left.showPriceLine === right.showPriceLine &&

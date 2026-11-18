@@ -205,9 +205,12 @@ grants (all four in Development, none in production, so 401). An unknown key is 
 **`LayoutSettings`.** `instrument` (a root, default `MES`); `watchlist` (up to `Api:MaxWatchlist` distinct roots,
 default `MES`, `MCL`, `MGC`); `sliceSeconds` (1 or 5); `chartMinutes` (1, 2, 5 or 15, default 1);
 `indicatorMinutes` (1, 5 or 15, default 1); `heatMode` (`intensity` or `flow`); `historyMinutes` (5–4,320, default
-240); `heatContrast` (0.1–5.0); `eventDotSize` (`small`, `medium`, `large`); `centerPrice` (boolean);
-`indicatorPane` (`footprint`, `cvd`, `rsi14`, `macd`, `atr14` or `tpo`, default `footprint`);
-`indicatorDockCollapsed` (boolean, default false); `sideSectionsCollapsed` (any of `ladder`, `liquidity`, `signals`,
+240); `heatContrast` (0.1–5.0); `eventDotSize` (`small`, `medium`, `large`); `centerPrice` (boolean; Order Flow
+and Detail keep the last price in the middle of the plot, D-54); `detailChart` (`footprint` or `price`, default
+`footprint`: Detail's main chart, the footprint or the heatmap and candle price chart, D-55);
+`indicatorPane` (`volume`, `cvd`, `rsi14`, `macd`, `atr14` or `tpo`, default `volume`: the tab the indicator dock
+shows on Detail and Order Flow; a `footprint` sent by an older client is stored as `volume`);
+`indicatorDockCollapsed` (boolean, default false; collapses the dock on both tabs); `sideSectionsCollapsed` (any of `ladder`, `liquidity`, `signals`,
 `levels`, `profile`, `layers`; default none); `showPriceLine` (boolean, default true); `panes` and `signals` (the
 pane and signal ids the client knows). For the optional fields, a PUT that omits one keeps the stored value, and an
 explicit null or an unknown value is refused with 400 (FR-9). Layouts are held in memory per key name; after a

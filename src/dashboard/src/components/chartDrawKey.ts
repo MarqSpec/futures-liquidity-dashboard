@@ -5,6 +5,7 @@ import { signalKindNames } from "../domain/signals.ts";
 import { canvasFonts } from "../lib/canvasFonts.ts";
 import { fnvHex, fnvStart, mix, mixNumbers } from "../lib/fnv.ts";
 import { canvasTheme } from "../theme.ts";
+import { stampFootprintBar } from "./drawFootprint.ts";
 import type { MainChartModel } from "./drawMainChart.ts";
 
 /** Cell hashes for columns the chart does not mutate. A corrected column is a new object, so this cannot go stale. */
@@ -83,7 +84,25 @@ export function mainChartDrawKey(
   hash = mixIndicators(hash, model);
   hash = mixTrail(hash, model);
   hash = mixOverlay(hash, model);
+  hash = mixFootprint(hash, model);
   return fnvHex(hash);
+}
+
+/** The footprint bars in the window, the forming one included, when Detail's main chart is the footprint. */
+function mixFootprint(hash: number, model: MainChartModel): number {
+  const layer = model.footprint;
+  if (!layer) return mix(hash, ["no-footprint"]);
+  const bars = layer.developing ? [...layer.bars, layer.developing] : layer.bars;
+  let drawn = 0;
+  for (const bar of bars) {
+    if (bar.t + bar.d < model.startMs || bar.t > model.endMs) continue;
+    drawn += 1;
+    // The forming bar is a new object on each delta, so its stamp is never reused once it has changed.
+    hash = mix(hash, [stampFootprintBar(bar)]);
+  }
+  hash = mix(hash, [drawn]);
+  hash = mixList(hash, layer.missingRanges.map((range) => [range[0], range[1] ?? ""]));
+  return mixList(hash, layer.approximateRanges.map((range) => [range[0], range[1] ?? ""]));
 }
 
 /** The kinds the chart asks `isKindOn` about, in a stable order. */

@@ -1,4 +1,4 @@
-import type { HeatColumn, LevelTouch, Profile, Signal } from "../api/schemas.ts";
+import type { Footprint, HeatColumn, LevelTouch, Profile, Signal } from "../api/schemas.ts";
 import { withAlpha } from "../design/color.ts";
 import type { Candle } from "../domain/candles.ts";
 import { formatAge, formatChicagoTime, formatLocalMinute, formatLocalTime, formatPercent, formatQty, formatTickRange, formatTicks } from "../domain/format.ts";
@@ -48,6 +48,16 @@ export interface MainChartModel {
   readonly overlay: boolean;
   readonly signals: readonly Signal[];
   readonly isKindOn: (kind: string) => boolean;
+  /** Set when Detail's main chart is the footprint (REQUIREMENTS.md FR-22): drawn instead of the price chart, on the same window. */
+  readonly footprint?: FootprintLayer | null;
+}
+
+/** The footprint bars Detail's main chart draws when it shows the footprint. */
+export interface FootprintLayer {
+  readonly bars: readonly Footprint[];
+  readonly developing: Footprint | null;
+  readonly missingRanges: readonly (readonly (number | null | undefined)[])[];
+  readonly approximateRanges: readonly (readonly (number | null | undefined)[])[];
 }
 
 /** Something under the pointer that has a tooltip. */
@@ -67,6 +77,8 @@ export interface MainChartGeometry {
   readonly time: LinearScale;
   readonly price: LinearScale;
   readonly markers: readonly Marker[];
+  /** Where the time axis starts, when a row sits between it and the plot (the footprint's delta row). */
+  readonly timeAxisTop?: number;
 }
 
 const HEAT_LEVELS = 16;
@@ -1005,7 +1017,7 @@ export function drawMainCrosshair(
       ctx.stroke();
       const text = `${formatLocalTime(timeMs)} · ${formatChicagoTime(timeMs)}`;
       const textWidth = ctx.measureText(text).width + 8;
-      labelBox(ctx, text, Math.min(w - textWidth, Math.max(0, x - textWidth / 2)), h + 10, { fill: colors.chip, color: colors.strong });
+      labelBox(ctx, text, Math.min(w - textWidth, Math.max(0, x - textWidth / 2)), (geometry.timeAxisTop ?? h) + 10, { fill: colors.chip, color: colors.strong });
     }
   }
   if (priceTicks !== null) {

@@ -2,12 +2,12 @@
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { bookmapFrame } from "../domain/bookmap.ts";
 import { chartZoomIn } from "../domain/chartCursor.ts";
 import { formatLocalTime } from "../domain/format.ts";
-import { defaultLayout } from "../domain/layout.ts";
+import { defaultLayout, type DetailChartId, type LayoutSettings } from "../domain/layout.ts";
 import { fromSnapshot, type MarketState } from "../domain/merge.ts";
 import { LIVE_EDGE_PAD, MAX_PRICE_ZOOM, MIN_PRICE_ZOOM, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
 import { createCrosshairStore, type CrosshairStore } from "../hooks/crosshair.ts";
@@ -20,10 +20,12 @@ import { MarketView } from "./MarketView.tsx";
 const base = fromSnapshot(snapshotFixture(), 5, 0);
 const historyMs = base.historyMinutes * 60_000;
 const initial: ViewWindow = { spanMs: 180_000, offsetMs: 0, priceZoom: 1 };
-const plotLeft = PROFILE_GUTTER;
 const plotRight = 800 - AXIS_WIDTH;
-const anchorX = plotLeft + 0.35 * (plotRight - plotLeft);
 const anchorY = 140;
+// Set per chart below: the price chart's plot starts after the profile gutter, the footprint's at the left edge.
+let plotLeft: number = PROFILE_GUTTER;
+let anchorX = plotLeft + 0.35 * (plotRight - plotLeft);
+let chartLayout: LayoutSettings = defaultLayout;
 
 beforeAll(() => {
   globalThis.ResizeObserver = class {
@@ -106,7 +108,7 @@ function Probe({ crosshair }: { readonly crosshair: CrosshairStore }) {
       </button>
       <MarketView
         market={market}
-        layout={defaultLayout}
+        layout={chartLayout}
         viewWindow={view}
         crosshair={crosshair}
         onWindow={(change) => setView((current) => change(current))}
@@ -133,7 +135,17 @@ function timeAtPointer(crosshair: CrosshairStore): number {
   return time;
 }
 
-describe("MarketView plot pan and wheel", () => {
+// — the footprint main chart pans and zooms as the price chart does.
+describe.each([
+  ["price", PROFILE_GUTTER],
+  ["footprint", 0],
+] as const satisfies readonly (readonly [DetailChartId, number])[])("MarketView plot pan and wheel on the %s chart", (chart, left) => {
+  beforeEach(() => {
+    plotLeft = left;
+    anchorX = plotLeft + 0.35 * (plotRight - plotLeft);
+    chartLayout = { ...defaultLayout, detailChart: chart };
+  });
+
   it("should keep the instant under the pointer when several wheel notches update real state", () => {
     const fraction = (anchorX - plotLeft) / (plotRight - plotLeft);
     let span = initial.spanMs;
@@ -205,7 +217,7 @@ describe("MarketView plot pan and wheel", () => {
           ) : (
             <MarketView
               market={base}
-              layout={defaultLayout}
+              layout={chartLayout}
               viewWindow={view}
               crosshair={crosshair}
               onWindow={(change) => setView(change)}
@@ -232,7 +244,7 @@ describe("MarketView plot pan and wheel", () => {
     expect(detailTime).toBeCloseTo(expected, 0);
 
     fireEvent.click(screen.getByRole("button", { name: "Order Flow" }));
-    const frame = bookmapFrame(800, 400, { volume: true, cvd: true });
+    const frame = bookmapFrame(800, 400);
     const stage = screen.getByLabelText(`Order Flow ${base.root}`).querySelector(".bookmap-stage");
     if (!(stage instanceof HTMLElement)) throw new Error("the Order Flow stage is missing");
     fireEvent.pointerMove(stage, { clientX: frame.plot.x + fraction * frame.plot.w, clientY: 40, pointerId: 3 });
@@ -269,7 +281,7 @@ describe("MarketView plot pan and wheel", () => {
     const host = render(
       <MarketView
         market={base}
-        layout={defaultLayout}
+        layout={chartLayout}
         viewWindow={view}
         crosshair={crosshair}
         onWindow={() => undefined}
@@ -296,7 +308,7 @@ describe("MarketView plot pan and wheel", () => {
     host.rerender(
       <MarketView
         market={elsewhere}
-        layout={defaultLayout}
+        layout={chartLayout}
         viewWindow={view}
         crosshair={crosshair}
         onWindow={() => undefined}
@@ -308,7 +320,7 @@ describe("MarketView plot pan and wheel", () => {
     host.rerender(
       <MarketView
         market={base}
-        layout={defaultLayout}
+        layout={chartLayout}
         viewWindow={view}
         crosshair={crosshair}
         onWindow={() => undefined}

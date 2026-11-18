@@ -68,9 +68,14 @@ public sealed class LayoutStoreTests
     [Fact]
     public void Validate_ShouldRejectTheIndicatorPane_WhenItIsNotOneOfTheDockTabs()
     {
+        new LayoutSettings { IndicatorPane = "volume" }.Validate().Should().BeEmpty();
         new LayoutSettings { IndicatorPane = "rsi14" }.Validate().Should().BeEmpty();
         new LayoutSettings { IndicatorPane = "tpo" }.Validate().Should().BeEmpty();
-        new LayoutSettings { IndicatorPane = "volume" }.Validate()
+        new LayoutSettings { IndicatorPane = "volumes" }.Validate()
+            .Should().Contain(error => error.Contains("IndicatorPane"));
+        new LayoutSettings { IndicatorPane = "Volume" }.Validate()
+            .Should().Contain(error => error.Contains("IndicatorPane"));
+        new LayoutSettings { IndicatorPane = "price" }.Validate()
             .Should().Contain(error => error.Contains("IndicatorPane"));
         new LayoutSettings { IndicatorPane = "" }.Validate()
             .Should().Contain(error => error.Contains("IndicatorPane"));
@@ -85,7 +90,7 @@ public sealed class LayoutStoreTests
 
         saved.Applied.Should().BeTrue();
         saved.Document.Layout.IndicatorPane.Should().Be("macd");
-        new LayoutSettings().IndicatorPane.Should().Be("footprint");
+        new LayoutSettings().IndicatorPane.Should().Be("volume");
         new LayoutSettings().IndicatorPaneSpecified.Should().BeFalse();
     }
 
@@ -96,19 +101,70 @@ public sealed class LayoutStoreTests
 
         omitted.Should().NotBeNull();
         omitted!.IndicatorPaneSpecified.Should().BeFalse();
-        omitted.IndicatorPane.Should().Be("footprint");
+        omitted.IndicatorPane.Should().Be("volume");
         var kept = omitted.PreservingStoredIndicatorPane(new LayoutSettings { IndicatorPane = "cvd" });
         kept.IndicatorPane.Should().Be("cvd");
         kept.IndicatorPaneSpecified.Should().BeTrue();
         kept.Instrument.Should().Be("MGC");
         kept.HistoryMinutes.Should().Be(30);
 
-        var explicitFootprint = JsonSerializer.Deserialize<LayoutSettings>("""{"indicatorPane":"footprint"}""", Json);
-        explicitFootprint!.IndicatorPaneSpecified.Should().BeTrue();
-        explicitFootprint.PreservingStoredIndicatorPane(new LayoutSettings { IndicatorPane = "cvd" }).IndicatorPane.Should().Be("footprint");
+        var explicitVolume = JsonSerializer.Deserialize<LayoutSettings>("""{"indicatorPane":"volume"}""", Json);
+        explicitVolume!.IndicatorPaneSpecified.Should().BeTrue();
+        explicitVolume.PreservingStoredIndicatorPane(new LayoutSettings { IndicatorPane = "cvd" }).IndicatorPane.Should().Be("volume");
 
         var explicitTab = JsonSerializer.Deserialize<LayoutSettings>("""{"indicatorPane":"tpo"}""", Json);
         explicitTab!.PreservingStoredIndicatorPane(new LayoutSettings { IndicatorPane = "cvd" }).IndicatorPane.Should().Be("tpo");
+    }
+
+    [Fact]
+    public void IndicatorPane_ShouldReadAsVolume_WhenAnOlderClientSendsTheRetiredFootprintTab()
+    {
+        var older = JsonSerializer.Deserialize<LayoutSettings>("""{"indicatorPane":"footprint"}""", Json);
+
+        older.Should().NotBeNull();
+        older!.IndicatorPane.Should().Be("volume", "the footprint is Detail's main chart now, and the dock's first tab is Volume");
+        older.IndicatorPaneSpecified.Should().BeTrue();
+        older.Validate().Should().BeEmpty();
+        older.PreservingStoredIndicatorPane(new LayoutSettings { IndicatorPane = "cvd" }).IndicatorPane.Should().Be("volume");
+        new LayoutSettings { IndicatorPane = "cvd" }.IndicatorPane.Should().Be("cvd");
+        using var served = JsonDocument.Parse(JsonSerializer.Serialize(older, Json));
+        served.RootElement.GetProperty("indicatorPane").GetString().Should().Be("volume");
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectTheDetailChart_WhenItIsNeitherFootprintNorPrice()
+    {
+        new LayoutSettings { DetailChart = "footprint" }.Validate().Should().BeEmpty();
+        new LayoutSettings { DetailChart = "price" }.Validate().Should().BeEmpty();
+        new LayoutSettings { DetailChart = "candles" }.Validate()
+            .Should().Contain(error => error.Contains("DetailChart"));
+        new LayoutSettings { DetailChart = "Price" }.Validate()
+            .Should().Contain(error => error.Contains("DetailChart"));
+        new LayoutSettings { DetailChart = "footprints" }.Validate()
+            .Should().Contain(error => error.Contains("DetailChart"));
+        new LayoutSettings { DetailChart = "" }.Validate()
+            .Should().Contain(error => error.Contains("DetailChart"));
+        new LayoutSettings { DetailChart = null! }.Validate()
+            .Should().Contain(error => error.Contains("DetailChart"));
+    }
+
+    [Fact]
+    public void PreservingStoredOmissions_ShouldKeepTheDetailChart_WhenTheJsonOmitsTheField()
+    {
+        new LayoutSettings().DetailChart.Should().Be("footprint", "Detail opens on the footprint");
+        using var fresh = JsonDocument.Parse(JsonSerializer.Serialize(new LayoutSettings(), Json));
+        fresh.RootElement.GetProperty("detailChart").GetString().Should().Be("footprint");
+        var stored = new LayoutSettings { DetailChart = "price" };
+
+        var omitted = JsonSerializer.Deserialize<LayoutSettings>("""{"instrument":"MGC"}""", Json);
+        omitted!.DetailChart.Should().Be("footprint");
+        omitted.PreservingStoredOmissions(stored).DetailChart.Should().Be("price", "an older client that omits the field must not reset it");
+
+        var explicitDefault = JsonSerializer.Deserialize<LayoutSettings>("""{"detailChart":"footprint"}""", Json);
+        explicitDefault!.PreservingStoredOmissions(stored).DetailChart.Should().Be("footprint", "an explicit default replaces the stored value");
+
+        var saved = new LayoutStore().Save("viewer", JsonSerializer.Deserialize<LayoutSettings>("""{"detailChart":"price"}""", Json)!, 0);
+        saved.Document.Layout.DetailChart.Should().Be("price");
     }
 
     [Fact]
@@ -272,6 +328,7 @@ public sealed class LayoutStoreTests
             EventDotSize = "large",
             CenterPrice = true,
             IndicatorPane = "cvd",
+            DetailChart = "price",
             ShowPriceLine = false,
             HideValueArea = true,
             EmphasizeNodes = true,
@@ -306,6 +363,7 @@ public sealed class LayoutStoreTests
         kept.CenterPrice.Should().BeTrue();
         kept.IndicatorPane.Should().Be("cvd");
         kept.IndicatorPaneSpecified.Should().BeTrue();
+        kept.DetailChart.Should().Be("price");
         kept.ShowPriceLine.Should().BeFalse();
         kept.HideValueArea.Should().BeTrue();
         kept.EmphasizeNodes.Should().BeTrue();
@@ -321,12 +379,13 @@ public sealed class LayoutStoreTests
             CenterPrice = true,
             ShowPriceLine = false,
             IndicatorPane = "tpo",
+            DetailChart = "price",
             Preset = "rips",
             ShowVolumeDots = false,
             Instrument = "MGC",
         };
         var explicitDefaults = JsonSerializer.Deserialize<LayoutSettings>(
-            """{"eventDotSize":"medium","centerPrice":false,"showPriceLine":true,"indicatorPane":"footprint","preset":"standard","showVolumeDots":true}""",
+            """{"eventDotSize":"medium","centerPrice":false,"showPriceLine":true,"indicatorPane":"volume","detailChart":"footprint","preset":"standard","showVolumeDots":true}""",
             Json);
 
         explicitDefaults.Should().NotBeNull();
@@ -335,7 +394,8 @@ public sealed class LayoutStoreTests
         replaced.EventDotSize.Should().Be("medium");
         replaced.CenterPrice.Should().BeFalse();
         replaced.ShowPriceLine.Should().BeTrue();
-        replaced.IndicatorPane.Should().Be("footprint");
+        replaced.IndicatorPane.Should().Be("volume");
+        replaced.DetailChart.Should().Be("footprint");
         replaced.Preset.Should().Be("standard");
         replaced.ShowVolumeDots.Should().BeTrue();
         replaced.Instrument.Should().Be("MES", "an omitted field from the first layout document still takes its default");

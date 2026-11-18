@@ -127,7 +127,7 @@ export function DashboardRoute() {
               />
               {market ? (
                 tab === "bookmap" ? (
-                  <BookmapView market={market} layout={layout} viewWindow={viewWindow} onReading={update} onWindow={changeWindow} />
+                  <BookmapView market={market} layout={layout} viewWindow={viewWindow} crosshair={crosshair} onReading={update} onWindow={changeWindow} />
                 ) : (
                   <MarketView
                     market={market}

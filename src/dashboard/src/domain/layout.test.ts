@@ -9,6 +9,7 @@ import {
   orderedHeatCutoffs,
   toLayout,
   watchlistLimit,
+  withDetailChart,
   withIndicatorDockCollapsed,
   withPane,
   withRipsPreset,
@@ -165,18 +166,43 @@ describe("isSignalOn", () => {
     expect(toLayout({ ...defaultLayout, showPriceLine: false }).showPriceLine).toBe(false);
   });
 
-  it("should default the indicator pane to footprint when the layout omits it", () => {
+  it("should default the indicator pane to volume when the layout omits it", () => {
     const { indicatorPane: _pane, ...older } = defaultLayout;
 
-    expect(toLayout(older).indicatorPane).toBe("footprint");
-    expect(defaultLayout.indicatorPane).toBe("footprint");
+    expect(toLayout(older).indicatorPane).toBe("volume");
+    expect(defaultLayout.indicatorPane).toBe("volume");
   });
 
-  it("should keep a known indicator pane and fall back when the served value is unknown", () => {
+  it("should keep a known indicator pane and fall back to volume when the served value is unknown", () => {
     expect(toLayout({ ...defaultLayout, indicatorPane: "rsi14" }).indicatorPane).toBe("rsi14");
     expect(toLayout({ ...defaultLayout, indicatorPane: "tpo" }).indicatorPane).toBe("tpo");
-    expect(toLayout({ ...defaultLayout, indicatorPane: "volume" }).indicatorPane).toBe("footprint");
-    expect(toLayout({ ...defaultLayout, indicatorPane: null }).indicatorPane).toBe("footprint");
+    expect(toLayout({ ...defaultLayout, indicatorPane: "cvd" }).indicatorPane).toBe("cvd");
+    expect(toLayout({ ...defaultLayout, indicatorPane: "volumes" }).indicatorPane).toBe("volume");
+    expect(toLayout({ ...defaultLayout, indicatorPane: null }).indicatorPane).toBe("volume");
+  });
+
+  it("should read a served footprint tab as volume when the server still holds the retired tab", () => {
+    expect(toLayout({ ...defaultLayout, indicatorPane: "footprint" }).indicatorPane).toBe("volume");
+  });
+
+  it("should open Detail on the footprint when the layout omits the main chart or serves one the client does not know", () => {
+    const { detailChart: _chart, ...older } = defaultLayout;
+
+    expect(defaultLayout.detailChart).toBe("footprint");
+    expect(toLayout(older).detailChart).toBe("footprint");
+    expect(toLayout({ ...defaultLayout, detailChart: "price" }).detailChart).toBe("price");
+    expect(toLayout({ ...defaultLayout, detailChart: "candles" }).detailChart).toBe("footprint");
+    expect(toLayout({ ...defaultLayout, detailChart: "Price" }).detailChart).toBe("footprint");
+    expect(toLayout({ ...defaultLayout, detailChart: null }).detailChart).toBe("footprint");
+  });
+
+  it("should switch the main chart and return the same layout when it is already shown", () => {
+    const price = withDetailChart(defaultLayout, "price");
+
+    expect(price.detailChart).toBe("price");
+    expect(price.indicatorPane).toBe(defaultLayout.indicatorPane);
+    expect(withDetailChart(price, "footprint").detailChart).toBe("footprint");
+    expect(withDetailChart(defaultLayout, "footprint")).toBe(defaultLayout);
   });
 
   it("should expand the indicator dock when the layout omits the flag or serves a value that is not a boolean", () => {

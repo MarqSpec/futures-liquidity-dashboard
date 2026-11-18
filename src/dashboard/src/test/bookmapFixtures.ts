@@ -2,12 +2,12 @@ import { READ_ONLY_TRAIL, bookmapFrame } from "../domain/bookmap.ts";
 import type { BookmapDrawModel } from "../components/drawBookmap.ts";
 
 // An Order Flow frame with something of every kind in it: warmup and live candles, a large two-sided dot, levels, a
-// quote, an event, a failed reclaim and its guide, the COB, SVP, volume strip and CVD.
+// quote, an event, a failed reclaim and its guide, the COB and SVP. Volume and CVD are indicator-dock tabs.
 
 export const bookmapSpec = { tickSize: 0.25, priceDecimals: 2 };
 
 export function bookmapModel(overrides: Partial<BookmapDrawModel> = {}): BookmapDrawModel {
-  const frame = bookmapFrame(1100, 640, { volume: true, cvd: true });
+  const frame = bookmapFrame(1100, 640);
   const base: BookmapDrawModel = {
     frame,
     startMs: 0,
@@ -56,12 +56,6 @@ export function bookmapModel(overrides: Partial<BookmapDrawModel> = {}): Bookmap
     },
     cob: { kind: "book", levels: [{ priceTicks: 104, bid: 12, ask: 0 }, { priceTicks: 105, bid: 0, ask: 9 }] },
     svp: [{ priceTicks: 104, bid: 6, ask: 2, unsided: 0 }],
-    volume: [
-      { t: 0, d: 60_000, buy: 4, sell: 6, warmup: true },
-      { t: 60_000, d: 60_000, buy: 14, sell: 6, warmup: false },
-    ],
-    cvdPoints: [[0, 0], [60_000, 4], [120_000, 9]],
-    cvdSummary: { cvd: 9, cvdKnown: true, lastQuantity: 3, lastPriceTicks: 107, warmup: false, note: "live" },
     spec: bookmapSpec,
     lastPriceTicks: 107,
     hover: { timeMs: 80_000, priceTicks: 106 },

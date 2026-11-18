@@ -145,12 +145,31 @@ describe("readStoredLayout", () => {
     expect(readStoredLayout({ revision: 3, layout: { ...defaultLayout, centerPrice: true } })?.layout.centerPrice).toBe(true);
   });
 
-  it("should default a missing indicator pane and refuse an unknown one", () => {
+  it("should default a missing indicator pane to volume and refuse an unknown one", () => {
     const { indicatorPane: _pane, ...older } = defaultLayout;
 
-    expect(readStoredLayout({ revision: 4, layout: older })?.layout.indicatorPane).toBe("footprint");
+    expect(readStoredLayout({ revision: 4, layout: older })?.layout.indicatorPane).toBe("volume");
     expect(readStoredLayout({ revision: 4, layout: { ...defaultLayout, indicatorPane: "macd" } })?.layout.indicatorPane).toBe("macd");
-    expect(readStoredLayout({ revision: 4, layout: { ...defaultLayout, indicatorPane: "volume" } })).toBeNull();
+    expect(readStoredLayout({ revision: 4, layout: { ...defaultLayout, indicatorPane: "volume" } })?.layout.indicatorPane).toBe("volume");
+    expect(readStoredLayout({ revision: 4, layout: { ...defaultLayout, indicatorPane: "volumes" } })).toBeNull();
+    expect(readStoredLayout({ revision: 4, layout: { ...defaultLayout, indicatorPane: null } })).toBeNull();
+  });
+
+  it("should read a stored footprint tab as volume and keep the rest of that layout", () => {
+    const stored = readStoredLayout({ revision: 4, layout: { ...defaultLayout, instrument: "MGC", indicatorPane: "footprint" } });
+
+    expect(stored?.layout.indicatorPane).toBe("volume");
+    expect(stored?.layout.instrument).toBe("MGC");
+    expect(readStoredLayout({ ...defaultLayout, indicatorPane: "footprint" })?.layout.indicatorPane).toBe("volume");
+  });
+
+  it("should keep a saved main chart, default a missing one to footprint and refuse one the server would reject", () => {
+    const { detailChart: _chart, ...older } = defaultLayout;
+
+    expect(readStoredLayout({ revision: 6, layout: older })?.layout.detailChart).toBe("footprint");
+    expect(readStoredLayout({ revision: 6, layout: { ...defaultLayout, detailChart: "price" } })?.layout.detailChart).toBe("price");
+    expect(readStoredLayout({ revision: 6, layout: { ...defaultLayout, detailChart: "candles" } })).toBeNull();
+    expect(readStoredLayout({ revision: 6, layout: { ...defaultLayout, detailChart: null } })).toBeNull();
   });
 
   it("should keep a saved collapsed dock and refuse a flag the server would reject", () => {

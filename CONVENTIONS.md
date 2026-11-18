@@ -36,6 +36,11 @@ repository.
   everything. Install with `pnpm install --frozen-lockfile`; add or bump with `pnpm add <pkg>@<range> --filter
   dashboard`, never by editing the lock. Runtime packages are `dependencies`, everything else `devDependencies`.
   `pnpm audit --prod` is the audit; an advisory is fixed by a bump or an `overrides` entry, never an ignore list.
+  Overrides live under `overrides:` in the root `pnpm-workspace.yaml` (pnpm ignores a `"pnpm"` field in
+  `package.json`), each with a comment naming the advisory it resolves, and are removed once the parent pins a
+  patched range itself. Today there is one: `workbox-build>glob: ^14.0.2`, for the `glob` and `minimatch`
+  advisories GHSA-3g3m-2fjr-6pw4 and GHSA-g3hv-75wg-m249, because the latest `workbox-build` still pins `glob`
+  11; it is build-time only and does not ship.
 
 Main packages: ASP.NET Core (minimal APIs, SignalR) and `Microsoft.AspNetCore.OpenApi`; OpenTelemetry with the
 Prometheus exporter; `MarqSpec.Client.ProjectX` for the TopstepX gateway; xUnit, FluentAssertions, FakeItEasy and

@@ -40,6 +40,11 @@ export interface SeriesPaneModel {
   /** Horizontal guides, e.g. 30/70 or 0. */
   readonly guides?: readonly number[];
   readonly format: (value: number) => string;
+  /**
+   * The width at the right for the value axis, `AXIS_WIDTH` when unset. Order Flow passes its PRICE, COB and SVP
+   * columns' width, so the pane's time axis spans the plot above it.
+   */
+  readonly axisWidth?: number;
 }
 
 /** The time scale a series pane was drawn with. */
@@ -62,7 +67,7 @@ function visibleValues(model: SeriesPaneModel): number[] {
 /** Draws a line/histogram pane on the shared time axis, with its own value axis on the right. */
 export function drawSeriesPane(surface: Surface, model: SeriesPaneModel): SeriesPaneGeometry {
   const { ctx, width, height } = surface;
-  const w = Math.max(10, width - AXIS_WIDTH);
+  const w = Math.max(10, width - (model.axisWidth ?? AXIS_WIDTH));
   const h = height;
   const time = linearScale(model.startMs, model.endMs, 0, w);
   ctx.fillStyle = colors.background;

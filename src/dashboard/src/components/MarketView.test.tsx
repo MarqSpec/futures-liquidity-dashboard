@@ -64,12 +64,12 @@ describe("MarketView", () => {
     expect(html).not.toContain("<img src=x");
   });
 
-  it("should show the footprint tab and leave the other indicator panes unmounted", () => {
+  it("should show the volume tab and leave the other indicator panes unmounted", () => {
     const html = render();
 
     expect(html).toContain('aria-label="Indicator panes"');
-    expect(html).toMatch(/aria-selected="true"[^>]*>Footprint</);
-    expect(html).toContain("Footprint of");
+    expect(html).toMatch(/aria-selected="true"[^>]*>Volume</);
+    expect(html).toContain("Traded volume of");
     expect(html).not.toContain("TPO profile");
     expect(html).not.toMatch(/aria-label="[^"]*RSI/);
   });
@@ -79,7 +79,7 @@ describe("MarketView", () => {
 
     expect(html).toContain("TPO profile");
     expect(html).toMatch(/aria-selected="true"[^>]*>TPO</);
-    expect(html).not.toContain("Footprint of");
+    expect(html).not.toContain("Traded volume of");
   });
 
   it("should say the product has no depth, on the chart and in the DOM pane, when the server is not receiving it", () => {

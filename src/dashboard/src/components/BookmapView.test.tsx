@@ -36,8 +36,6 @@ describe("BookmapView", () => {
     await user.click(screen.getByRole("button", { name: "Display" }));
     expect(screen.getByRole("button", { name: "Candles Overlay" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "PNC & Trail Guide" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Bottom Volume Strip" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "CVD Subchart" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Event key" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Zoom price in" }).textContent).toBe("+");
     expect(screen.getByRole("button", { name: "Zoom price out" }).textContent).toBe("−");
@@ -252,8 +250,6 @@ describe("BookmapView", () => {
       [() => screen.getByRole("button", { name: "Price line" }), hints.displayPriceLine],
       [() => screen.getByRole("button", { name: "BBO Lines" }), hints.displayBbo],
       [() => screen.getByRole("button", { name: "PNC & Trail Guide" }), hints.displayPnc],
-      [() => screen.getByRole("button", { name: "Bottom Volume Strip" }), hints.displayVolume],
-      [() => screen.getByRole("button", { name: "CVD Subchart" }), hints.displayCvd],
       [() => screen.getByRole("button", { name: "Event key" }), hints.displayKey],
     ] as const;
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeFootprint, footprintRows } from "../domain/footprint.ts";
 import { formatTicks } from "../domain/format.ts";
 import { falling, market, model, profile, start } from "../test/detailCanvasFixtures.ts";
 import { fakeSurface, type CanvasCall } from "../test/fakeCanvas.ts";
@@ -54,22 +53,24 @@ describe("Detail canvas text", () => {
   });
 
   it("should write footprint cells data-sm when rows are tall and data-xs when they are short", () => {
-    const bars = market.orderFlow.footprints;
-    const window = { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument };
-    const rows = footprintRows(bars.map((bar) => decodeFootprint(bar))).length;
-    // 16px title band and 16px delta strip around the rows: 18px rows (the cap) and 11px rows.
-    const tall = fakeSurface(1200, 2000);
-    const short = fakeSurface(1200, 32 + rows * 11);
+    // One closed bar with cells at 100–102 on a seven-tick window: a 264px plot gives 37px rows, a 77px plot 11px rows.
+    const closed = { t: 0, d: 60_000, v: 30, delta: 1, maxDelta: 1, minDelta: 0, c: [100, 4, 6, 0, 101, 7, 8, 0, 102, 1, 2, 0] };
+    const window = { startMs: 0, endMs: 120_000, lowTicks: 98, highTicks: 104, bars: [closed], developing: null, spec: market.instrument };
+    const strip = 20 + 16;
+    const tall = fakeSurface(1200, 264 + strip);
+    const short = fakeSurface(1200, 77 + strip);
 
     drawFootprint(tall.surface, window);
     drawFootprint(short.surface, window);
 
+    const cellFonts = (calls: typeof tall.calls) =>
+      calls.filter((call) => call.method === "fillText" && ["4", "6", "7", "8", "1", "2"].includes(String(call.args[0]))).map((call) => call.font);
     expect(textFonts(tall.calls).filter((font) => !allowed.has(font))).toEqual([]);
     expect(textFonts(short.calls).filter((font) => !allowed.has(font))).toEqual([]);
-    // The pane's title is data-sm at any height; tall rows add the cells.
-    expect(textFonts(tall.calls).filter((font) => font === fonts.sm).length).toBeGreaterThan(1);
-    expect(textFonts(short.calls).filter((font) => font === fonts.sm)).toHaveLength(1);
-    expect(textFonts(short.calls).filter((font) => font === fonts.xs).length).toBeGreaterThan(bars.length);
+    expect(cellFonts(tall.calls)).toHaveLength(6);
+    expect(new Set(cellFonts(tall.calls))).toEqual(new Set([fonts.sm]));
+    expect(cellFonts(short.calls)).toHaveLength(6);
+    expect(new Set(cellFonts(short.calls))).toEqual(new Set([fonts.xs]));
   });
 
   it("should write the profile's labels in the data faces when it draws", () => {

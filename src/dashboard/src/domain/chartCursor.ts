@@ -1,6 +1,7 @@
-import type { HeatColumn } from "../api/schemas.ts";
+import type { Footprint, HeatColumn } from "../api/schemas.ts";
 import type { Candle } from "./candles.ts";
-import { formatChicagoTime, formatPercent, formatQty, formatTicks, type TickSpec } from "./format.ts";
+import { decodeFootprint } from "./footprint.ts";
+import { formatChicagoTime, formatPercent, formatQty, formatSigned, formatTicks, type TickSpec } from "./format.ts";
 import { forEachHeatCell } from "./heat.ts";
 
 /** Shown on the chart while it has keyboard focus. Kept short so it does not cover the plot. */
@@ -181,6 +182,38 @@ export function focusedBarReadout(input: {
     ? `bid ${formatRawQty(cell.bid)}, ask ${formatRawQty(cell.ask)}, coverage ${formatPercent(cell.knownMs / Math.max(1, column?.d ?? 1))}`
     : "no depth at this price";
   return `${root} ${formatChicagoTime(candle.t)} (${chicagoUtcOffset(candle.t)}), OHLC ${ohlc}, volume ${formatQty(candle.v)}, ${formatTicks(priceTicks, spec)} ${depth}`;
+}
+
+/**
+ * The footprint main chart's bars as cursor stops: one per footprint column, the forming one last, so the keys and the
+ * pointer move by footprint column whatever the candle interval. A column with no trades has no stop.
+ */
+export function footprintCursorBars(bars: readonly Footprint[], developing: Footprint | null): Candle[] {
+  const all = developing ? [...bars, developing] : bars;
+  const stops: Candle[] = [];
+  for (const bar of all) {
+    if (bar.o == null || bar.h == null || bar.l == null || bar.cl == null) continue;
+    stops.push({ t: bar.t, d: bar.d, o: bar.o, h: bar.h, l: bar.l, c: bar.cl, v: bar.v, bv: 0, sv: 0, developing: bar === developing });
+  }
+  return stops;
+}
+
+/**
+ * The focused footprint column's readout (REQUIREMENTS.md FR-7, FR-41, FR-45): Chicago time and offset, the bar's volume and
+ * delta, and the volume traded at the bid and at the ask at the focused price, the same two numbers its cell prints.
+ * It says "traded" because resting depth is not drawn on this chart.
+ */
+export function footprintReadout(input: {
+  readonly root: string;
+  readonly spec: TickSpec;
+  readonly bar: Footprint | null;
+  readonly priceTicks: number;
+}): string {
+  const { root, spec, bar, priceTicks } = input;
+  if (!bar) return `${root}, no footprint bar in view`;
+  const cell = decodeFootprint(bar).find((item) => item.priceTicks === priceTicks);
+  const traded = cell ? `traded bid ${formatQty(cell.bid)} × ask ${formatQty(cell.ask)}` : "no trades at this price";
+  return `${root} ${formatChicagoTime(bar.t)} (${chicagoUtcOffset(bar.t)}), footprint volume ${formatQty(bar.v)}, delta ${formatSigned(bar.delta)}, ${formatTicks(priceTicks, spec)} ${traded}`;
 }
 
 /**

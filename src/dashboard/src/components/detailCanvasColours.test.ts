@@ -224,9 +224,10 @@ describe("drawFootprint", () => {
     const { surface, calls } = fakeSurface(1200, 300);
     const bars = market.orderFlow.footprints;
 
-    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument });
+    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, lowTicks: 27_068, highTicks: 27_084, bars, developing: null, spec: market.instrument });
 
-    const cells = styles(calls, "fillRect", "fillStyle").filter((style) => String(style).startsWith("rgba("));
+    // The title's chip is the plot scrim, not a cell.
+    const cells = styles(calls, "fillRect", "fillStyle").filter((style) => String(style).startsWith("rgba(") && style !== color("scrim-chart"));
     const up = withAlpha(color("up"), 0).replace(/0\)$/, "");
     const down = withAlpha(color("down"), 0).replace(/0\)$/, "");
     expect(cells.length).toBeGreaterThan(0);

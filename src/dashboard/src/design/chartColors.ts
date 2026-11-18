@@ -62,7 +62,7 @@ const SPECS: readonly RoleSpec[] = [
   { token: "down", name: "Selling / down", group: "Price direction", mark: "bar", marks: "Falling candles, sell volume and a volume dot's base, negative change and CVD, bearish signals.", tabs: ALL },
   { token: "dot-outline-buy", name: "Buy outline", group: "Price direction", mark: "ring", marks: "The edge of a volume dot's buy share, the whole edge when it is all buying, on Detail and Order Flow.", tabs: CHARTS },
   { token: "dot-outline-sell", name: "Sell outline", group: "Price direction", mark: "ring", marks: "The edge of a volume dot's sell share, the whole edge when it is all selling, on Detail and Order Flow.", tabs: CHARTS },
-  { token: "bid", name: "Bid depth", group: "Order book", mark: "bar", marks: "Resting bid depth, the ladder's bid bars, the imbalance bid share, the best-bid line, the DOM marker and the CVD line.", tabs: ALL },
+  { token: "bid", name: "Bid depth", group: "Order book", mark: "bar", marks: "Resting bid depth, the ladder's bid bars, the imbalance bid share, the best-bid line and the DOM marker. The CVD line follows up and down.", tabs: ALL },
   { token: "ask", name: "Ask depth", group: "Order book", mark: "bar", marks: "Resting ask depth, the ladder's ask bars, the imbalance ask share, the best-ask line, conflicting timeframes.", tabs: ["Detail", "Order Flow", "Overview", "Side column"] },
   { token: "bid-strong", name: "Bid price text", group: "Order book", mark: "text", marks: "Bid prices as text in the depth ladder.", tabs: ["Side column"] },
   { token: "ask-strong", name: "Ask price text", group: "Order book", mark: "text", marks: "Ask prices as text in the depth ladder.", tabs: ["Side column"] },
@@ -103,7 +103,7 @@ const SPECS: readonly RoleSpec[] = [
   event("event-single-prints", "Single prints", false),
   event("event-failed-reclaim", "Failed reclaim", true),
   event("event-unknown", "Unknown event", false),
-  { token: "warmup", name: "Warmup", group: "Warmup", mark: "line", marks: "Warmup candles, the close line, CVD and volume before the live watermark, and the warmup band.", tabs: ["Order Flow"] },
+  { token: "warmup", name: "Warmup", group: "Warmup", mark: "line", marks: "Warmup candles, the close line, CVD and volume before the live watermark, the warmup band, and, on the indicator dock under Detail and Order Flow, warmup and unsided bars on the Volume tab and the warmup stretch of the CVD tab.", tabs: ["Order Flow", "Indicator dock"] },
 ];
 
 /** Every configurable role, with its NFR-8 floor read from the contrast lists. */

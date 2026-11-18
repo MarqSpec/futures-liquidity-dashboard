@@ -18,6 +18,32 @@ file. Every instrument always says where its data came from: `LIVE`, `REPLAY` or
 > has been checked against a real account ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-1, D-15). Do not run it in a
 > shared environment before then.
 
+## Screenshots
+
+All four are taken from the synthetic feed, so every price, size and signal in them is simulated, and each view
+says so: the `SIMULATED` badges in the header, the watermark on the Detail chart and the provenance counts on the
+Overview.
+
+**Detail**: the footprint as the main chart, the depth ladder and side column on the right, and the indicator dock
+open on its Volume tab underneath.
+
+![Detail tab: a one-hour footprint chart of simulated MES with the SIMULATED watermark, the depth ladder and liquidity panel on the right, and the indicator dock open on its Volume tab below](images/detail-footprint.png)
+
+**Order Flow**: the liquidity heatmap with volume dots and event markers on one price scale, the PRICE, COB and
+SVP columns docked at the right, and the same indicator dock underneath. The grey band at the left is warmup
+history, which carries no depth and no aggressor side.
+
+![Order Flow tab: a resting-liquidity heatmap with buy and sell volume dots, session levels and an event-marker key over simulated MES, the PRICE, COB and SVP columns at the right, and the indicator dock open on its Volume tab below](images/order-flow.png)
+
+**Overview**: every product the feed offers, with its last price, change, range, volume, flow, trend and latest
+signal, and the count of products in each provenance state.
+
+![Overview tab: a table of the simulated products grouped by sector, with the starred watchlist at the top and the SIMULATED and STALE counts at the top right](images/overview.png)
+
+**The Light theme**, here on Detail over a one-hour window, with the dock on its CVD tab.
+
+![Detail tab in the Light theme: a one-hour footprint chart of simulated MES on a warm paper background with the SIMULATED watermark, the depth ladder on the right, and the indicator dock open on its CVD tab below](images/detail-light.png)
+
 ## Documents
 
 | Document | What it covers |

@@ -69,7 +69,8 @@ function Tabs({ shown, first, start = fitted, locked = false }: {
   readonly locked?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>(first);
-  const [layout, setLayout] = useState<LayoutSettings>({ ...defaultLayout, centerPrice: locked });
+  // The price chart's plot middle is read below; MarketView.priceControls.test.tsx covers the footprint.
+  const [layout, setLayout] = useState<LayoutSettings>({ ...defaultLayout, detailChart: "price", centerPrice: locked });
   const [view, setView] = useState<ViewWindow>(start);
   useEffect(() => {
     seenWindow = view;
@@ -127,7 +128,7 @@ function middlePrice(tab: Tab): number {
     return price;
   }
   const stage = screen.getByTitle(/Shift\+wheel zooms price/);
-  fireEvent.pointerMove(stage, { clientX: 100, clientY: bookmapFrame(800, 600, { volume: true, cvd: true }).plot.h / 2, pointerId: 9 });
+  fireEvent.pointerMove(stage, { clientX: 100, clientY: bookmapFrame(800, 600).plot.h / 2, pointerId: 9 });
   const row = [...screen.getByLabelText("Order Flow readout").querySelectorAll("div")].find((item) => item.querySelector("dt")?.textContent === "Price");
   return Number((row?.querySelector("dd")?.textContent ?? "").replace(/,/g, "")) / base.instrument.tickSize;
 }

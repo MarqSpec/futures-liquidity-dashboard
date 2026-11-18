@@ -19,8 +19,6 @@ export const hints = {
   displayPriceLine: "Draws the last traded price over time as a line.",
   displayBbo: "Draws the best bid and best ask as thin lines.",
   displayPnc: "Shows the failed-reclaim markers and the read-only trail guide, which is not an order.",
-  displayVolume: "Shows a buy and sell volume strip under the plot.",
-  displayCvd: "Shows the cumulative volume delta, the running total of buy minus sell volume, in a pane under the plot.",
   displayKey: "Shows what each event marker color and shape means.",
   regime5m: "The market regime on 5-minute bars: trending up or down, ranging, or unclear.",
   regime15m: "The market regime on 15-minute bars: trending up or down, ranging, or unclear.",

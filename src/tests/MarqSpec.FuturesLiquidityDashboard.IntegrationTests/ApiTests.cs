@@ -222,7 +222,7 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
         using var saved = JsonDocument.Parse(await put.Content.ReadAsStringAsync());
         saved.RootElement.GetProperty("layout").GetProperty("indicatorPane").GetString().Should().Be("rsi14");
 
-        var bad = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"volume\"}}";
+        var bad = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"volumes\"}}";
         using var content = new StringContent(bad, Encoding.UTF8, "application/json");
         using var rejected = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), content);
         rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -236,12 +236,69 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
         preserved.RootElement.GetProperty("layout").GetProperty("historyMinutes").GetInt32().Should().Be(45);
         preserved.RootElement.GetProperty("layout").GetProperty("instrument").GetString().Should().Be("MGC");
 
-        var reset = "{\"revision\":" + (revision + 2) + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"footprint\"}}";
+        var reset = "{\"revision\":" + (revision + 2) + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"volume\"}}";
         using var resetBody = new StringContent(reset, Encoding.UTF8, "application/json");
         using var replaced = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), resetBody);
         replaced.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var footprint = JsonDocument.Parse(await replaced.Content.ReadAsStringAsync());
-        footprint.RootElement.GetProperty("layout").GetProperty("indicatorPane").GetString().Should().Be("footprint");
+        using var volume = JsonDocument.Parse(await replaced.Content.ReadAsStringAsync());
+        volume.RootElement.GetProperty("layout").GetProperty("indicatorPane").GetString().Should().Be("volume");
+    }
+
+    [Fact]
+    public async Task Layout_ShouldStoreVolume_WhenAnOlderClientSendsTheRetiredFootprintTab()
+    {
+        using var client = factory.CreateClient();
+        var revision = await LayoutRevision(client);
+        var tab = "{\"revision\":" + revision + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"cvd\"}}";
+        using var tabBody = new StringContent(tab, Encoding.UTF8, "application/json");
+        using var first = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), tabBody);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var older = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"indicatorPane\":\"footprint\"}}";
+        using var olderBody = new StringContent(older, Encoding.UTF8, "application/json");
+        using var put = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), olderBody);
+
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var saved = JsonDocument.Parse(await put.Content.ReadAsStringAsync());
+        saved.RootElement.GetProperty("layout").GetProperty("indicatorPane").GetString().Should().Be("volume");
+        using var served = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative)));
+        served.RootElement.GetProperty("layout").GetProperty("indicatorPane").GetString().Should().Be("volume");
+    }
+
+    [Fact]
+    public async Task Layout_RoundTripsTheDetailChart_AndRejectsAnUnknownOne()
+    {
+        using var client = factory.CreateClient();
+        var revision = await LayoutRevision(client);
+        var price = "{\"revision\":" + revision + ",\"layout\":{\"instrument\":\"MGC\",\"detailChart\":\"price\"}}";
+        using var priceBody = new StringContent(price, Encoding.UTF8, "application/json");
+        using var put = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), priceBody);
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var saved = JsonDocument.Parse(await put.Content.ReadAsStringAsync());
+        saved.RootElement.GetProperty("layout").GetProperty("detailChart").GetString().Should().Be("price");
+
+        foreach (var refused in new[] { "\"candles\"", "\"Price\"", "\"\"", "null", "1" })
+        {
+            var bad = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"detailChart\":" + refused + "}}";
+            using var badBody = new StringContent(bad, Encoding.UTF8, "application/json");
+            using var rejected = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), badBody);
+            rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"detailChart {refused} is not footprint or price");
+        }
+
+        (await LayoutRevision(client)).Should().Be(revision + 1, "a refused save stores nothing");
+        var older = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"historyMinutes\":45}}";
+        using var olderBody = new StringContent(older, Encoding.UTF8, "application/json");
+        using var kept = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), olderBody);
+        kept.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var preserved = JsonDocument.Parse(await kept.Content.ReadAsStringAsync());
+        preserved.RootElement.GetProperty("layout").GetProperty("detailChart").GetString().Should().Be("price");
+
+        var footprint = "{\"revision\":" + (revision + 2) + ",\"layout\":{\"instrument\":\"MGC\",\"detailChart\":\"footprint\"}}";
+        using var footprintBody = new StringContent(footprint, Encoding.UTF8, "application/json");
+        using var replaced = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), footprintBody);
+        replaced.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var reset = JsonDocument.Parse(await replaced.Content.ReadAsStringAsync());
+        reset.RootElement.GetProperty("layout").GetProperty("detailChart").GetString().Should().Be("footprint");
     }
 
     [Fact]
@@ -287,7 +344,7 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
     {
         using var client = factory.CreateClient();
         var revision = await LayoutRevision(client);
-        var saved = "{\"revision\":" + revision + ",\"layout\":{\"instrument\":\"MGC\",\"watchlist\":[\"MES\"],\"chartMinutes\":5,\"indicatorMinutes\":15,\"heatMode\":\"flow\",\"preset\":\"rips\",\"showCandles\":true,\"showVolumeDots\":false,\"heatDim\":0.4,\"heatLowPercentile\":10,\"heatHighPercentile\":90,\"heatAutoContrast\":false,\"dotMinQuantity\":4,\"eventDotSize\":\"large\",\"centerPrice\":true,\"indicatorPane\":\"cvd\",\"showPriceLine\":false,\"hideValueArea\":true,\"emphasizeNodes\":true}}";
+        var saved = "{\"revision\":" + revision + ",\"layout\":{\"instrument\":\"MGC\",\"watchlist\":[\"MES\"],\"chartMinutes\":5,\"indicatorMinutes\":15,\"heatMode\":\"flow\",\"preset\":\"rips\",\"showCandles\":true,\"showVolumeDots\":false,\"heatDim\":0.4,\"heatLowPercentile\":10,\"heatHighPercentile\":90,\"heatAutoContrast\":false,\"dotMinQuantity\":4,\"eventDotSize\":\"large\",\"centerPrice\":true,\"indicatorPane\":\"cvd\",\"detailChart\":\"price\",\"showPriceLine\":false,\"hideValueArea\":true,\"emphasizeNodes\":true}}";
         using var putBody = new StringContent(saved, Encoding.UTF8, "application/json");
         using var put = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), putBody);
         put.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -319,11 +376,12 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
         layout.GetProperty("eventDotSize").GetString().Should().Be("large");
         layout.GetProperty("centerPrice").GetBoolean().Should().BeTrue();
         layout.GetProperty("indicatorPane").GetString().Should().Be("cvd");
+        layout.GetProperty("detailChart").GetString().Should().Be("price");
         layout.GetProperty("showPriceLine").GetBoolean().Should().BeFalse();
         layout.GetProperty("hideValueArea").GetBoolean().Should().BeTrue();
         layout.GetProperty("emphasizeNodes").GetBoolean().Should().BeTrue();
 
-        var defaults = "{\"revision\":" + (revision + 2) + ",\"layout\":{\"instrument\":\"MCL\",\"eventDotSize\":\"medium\",\"centerPrice\":false,\"showPriceLine\":true,\"indicatorPane\":\"footprint\"}}";
+        var defaults = "{\"revision\":" + (revision + 2) + ",\"layout\":{\"instrument\":\"MCL\",\"eventDotSize\":\"medium\",\"centerPrice\":false,\"showPriceLine\":true,\"indicatorPane\":\"volume\",\"detailChart\":\"footprint\"}}";
         using var defaultsBody = new StringContent(defaults, Encoding.UTF8, "application/json");
         using var replaced = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), defaultsBody);
         replaced.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -332,7 +390,8 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
         replacedLayout.GetProperty("eventDotSize").GetString().Should().Be("medium");
         replacedLayout.GetProperty("centerPrice").GetBoolean().Should().BeFalse();
         replacedLayout.GetProperty("showPriceLine").GetBoolean().Should().BeTrue();
-        replacedLayout.GetProperty("indicatorPane").GetString().Should().Be("footprint");
+        replacedLayout.GetProperty("indicatorPane").GetString().Should().Be("volume");
+        replacedLayout.GetProperty("detailChart").GetString().Should().Be("footprint");
         replacedLayout.GetProperty("preset").GetString().Should().Be("rips");
 
         var nullCenter = "{\"revision\":" + (revision + 3) + ",\"layout\":{\"instrument\":\"MCL\",\"centerPrice\":null}}";

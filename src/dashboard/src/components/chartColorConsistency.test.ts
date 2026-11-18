@@ -106,9 +106,12 @@ describe("colours derived from an overridden role", () => {
     const { surface, calls } = fakeSurface(1200, 300);
     const bars = market.orderFlow.footprints;
 
-    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument });
+    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, lowTicks: 27_068, highTicks: 27_084, bars, developing: null, spec: market.instrument });
 
-    const cells = calls.filter((call) => call.method === "fillRect" && String(call.fillStyle).startsWith("rgba(")).map((call) => String(call.fillStyle));
+    // The title's chip is the plot scrim, not a cell.
+    const cells = calls
+      .filter((call) => call.method === "fillRect" && String(call.fillStyle).startsWith("rgba(") && call.fillStyle !== color("scrim-chart"))
+      .map((call) => String(call.fillStyle));
     const up = withAlpha(UP, 0).replace(/0\)$/, "");
     const down = withAlpha("#654321", 0).replace(/0\)$/, "");
     expect(cells.length).toBeGreaterThan(0);
@@ -121,7 +124,7 @@ describe("colours derived from an overridden role", () => {
     const bars = market.orderFlow.footprints;
     const lightInk = () => {
       const { surface, calls } = fakeSurface(1200, 300);
-      drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument });
+      drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, lowTicks: 27_068, highTicks: 27_084, bars, developing: null, spec: market.instrument });
       return calls.filter((call) => call.method === "fillText" && call.fillStyle === color("surface-lowest", "light")).length;
     };
     const plain = lightInk();

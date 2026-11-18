@@ -29,8 +29,6 @@ export const RECLAIM_RETURN_MS = 120_000;
 export const BOOKMAP_PRICE_W = 76;
 export const BOOKMAP_COB_W = 96;
 export const BOOKMAP_SVP_W = 96;
-export const BOOKMAP_VOLUME_H = 52;
-export const BOOKMAP_CVD_H = 78;
 
 const MIN_RADIUS = 2.5;
 const MAX_RADIUS = 10;
@@ -88,15 +86,15 @@ export interface Box {
   readonly h: number;
 }
 
-/** The Bookmap canvas: the plot and the dock share one vertical span; the strip and CVD sit under the plot. */
+/**
+ * The Bookmap canvas: the plot and the dock share one vertical span, the stage's whole height. Volume and CVD are tabs
+ * of the indicator dock under the stage, not strips on this canvas.
+ */
 export interface BookmapFrame {
   readonly plot: Box;
   readonly price: Box;
   readonly cob: Box;
   readonly svp: Box;
-  readonly volume: Box | null;
-  readonly cvd: Box | null;
-  readonly cvdBox: Box | null;
 }
 
 /**
@@ -115,27 +113,16 @@ export function bookmapDockWidths(stageWidth: number): { readonly price: number;
   return { price, cob, svp };
 }
 
-/** Plot, price, COB and SVP share `y` and `h`. The CVD summary sits under that dock. */
-export function bookmapFrame(width: number, height: number, options: { readonly volume: boolean; readonly cvd: boolean }): BookmapFrame {
+/** Plot, price, COB and SVP share `y` and `h`, the stage's whole height. */
+export function bookmapFrame(width: number, height: number): BookmapFrame {
   const dock = bookmapDockWidths(width);
-  const dockW = dock.price + dock.cob + dock.svp;
-  const plotW = Math.max(1, width - dockW);
-  const volumeH = options.volume ? BOOKMAP_VOLUME_H : 0;
-  const cvdH = options.cvd ? BOOKMAP_CVD_H : 0;
-  const plotH = Math.max(1, height - volumeH - cvdH);
-  const price: Box = { x: plotW, y: 0, w: dock.price, h: plotH };
-  const cob: Box = { x: plotW + dock.price, y: 0, w: dock.cob, h: plotH };
-  const svp: Box = { x: plotW + dock.price + dock.cob, y: 0, w: dock.svp, h: plotH };
-  const volume = options.volume ? { x: 0, y: plotH, w: plotW, h: BOOKMAP_VOLUME_H } : null;
-  const cvdTop = plotH + volumeH;
+  const plotW = Math.max(1, width - dock.price - dock.cob - dock.svp);
+  const plotH = Math.max(1, height);
   return {
     plot: { x: 0, y: 0, w: plotW, h: plotH },
-    price,
-    cob,
-    svp,
-    volume,
-    cvd: options.cvd ? { x: 0, y: cvdTop, w: plotW, h: BOOKMAP_CVD_H } : null,
-    cvdBox: options.cvd ? { x: plotW, y: cvdTop, w: dockW, h: BOOKMAP_CVD_H } : null,
+    price: { x: plotW, y: 0, w: dock.price, h: plotH },
+    cob: { x: plotW + dock.price, y: 0, w: dock.cob, h: plotH },
+    svp: { x: plotW + dock.price + dock.cob, y: 0, w: dock.svp, h: plotH },
   };
 }
 
@@ -460,7 +447,7 @@ export interface VolumeStripBar {
   readonly warmup: boolean;
 }
 
-/** Bottom strip. A bar that starts at or before the watermark is warmup and is not painted as aggressor flow. */
+/** Volume per bar. A bar that starts at or before the watermark is warmup and is not painted as aggressor flow. */
 export function volumeStripBars(
   bars: readonly { readonly t: number; readonly d: number; readonly bv: number; readonly sv: number }[],
   historyWatermarkMs: number | null,

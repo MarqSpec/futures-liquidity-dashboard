@@ -1,6 +1,8 @@
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 
+import type { Candle } from "../domain/candles.ts";
 import { formatQty, formatSigned } from "../domain/format.ts";
+import { fitRange } from "../domain/scale.ts";
 import {
   indicatorPanes,
   withIndicatorDockCollapsed,
@@ -11,25 +13,32 @@ import {
 import type { IndicatorSeries, MarketState } from "../domain/merge.ts";
 import type { CrosshairStore } from "../hooks/crosshair.ts";
 import { colors, indicatorColors } from "../theme.ts";
-import { drawFootprint } from "./drawFootprint.ts";
-import { drawSeriesPane, type SeriesPaneModel } from "./drawSeriesPane.ts";
+import { drawSeriesPane, type SeriesLine, type SeriesPaneModel } from "./drawSeriesPane.ts";
+import { drawVolumePane, volumePaneBars } from "./drawVolumePane.ts";
 import { TimePane } from "./TimePane.tsx";
 import { TpoPanel } from "./TpoPanel.tsx";
 
-/** Props of the Detail indicator dock. One tab fills the dock; the others are not mounted. */
+/** Props of the indicator dock, on Detail and Order Flow. One tab fills the dock; the others are not mounted. */
 export interface IndicatorDockProps {
   readonly market: MarketState;
   readonly layout: LayoutSettings;
+  /** The main chart's bars, at its interval: the Volume tab draws one bar each. */
+  readonly candles: readonly Candle[];
   readonly indicators: readonly IndicatorSeries[];
   readonly startMs: number;
   readonly endMs: number;
   readonly crosshair: CrosshairStore;
   readonly showSinglePrints: boolean;
   readonly onReading?: (change: (current: LayoutSettings) => LayoutSettings) => void;
+  /**
+   * The width the time-series tabs leave at the right for their value axis, `AXIS_WIDTH` when unset. Order Flow
+   * passes its PRICE, COB and SVP columns' width, so each tab's time axis spans the plot above it.
+   */
+  readonly axisWidth?: number;
 }
 
 const tabLabel: Record<IndicatorPaneId, string> = {
-  footprint: "Footprint",
+  volume: "Volume",
   cvd: "CVD",
   rsi14: "RSI",
   macd: "MACD",
@@ -50,6 +59,36 @@ function seriesPoints(series: IndicatorSeries | undefined, index: number, scale:
   return points;
 }
 
+// — the maintainer's colour ruling.
+/**
+ * The session CVD as two stretches, as Order Flow's CVD subchart drew it: up to the watermark in the warmup colour,
+ * after it in `up` while the session CVD is positive, `down` while it is negative and the text colour at zero, with no
+ * segment between them (REQUIREMENTS.md FR-61, ARCHITECTURE.md D-48). The live value now ends the live stretch.
+ */
+function cvdLines(points: readonly (readonly [number, number])[], cvd: number, nowMs: number, watermarkMs: number | null): SeriesLine[] {
+  const warmup: [number, number][] = [];
+  const live: [number, number][] = [];
+  for (const [t, v] of [...points, [nowMs, cvd] as const]) {
+    (watermarkMs !== null && t <= watermarkMs ? warmup : live).push([t, v]);
+  }
+  return [
+    { points: warmup, color: colors.warmup },
+    { points: live, color: cvd > 0 ? colors.up : cvd < 0 ? colors.down : colors.text },
+  ];
+}
+
+/**
+ * The CVD tab's value range: fitted to the line in the window, as Order Flow's CVD subchart fitted it, so a session CVD
+ * far from zero keeps its shape. The zero guide is drawn only when zero is in that range. With no point in view, the
+ * pane fits itself around the zero guide.
+ */
+function cvdScale(lines: readonly SeriesLine[], startMs: number, endMs: number): Pick<SeriesPaneModel, "range" | "guides"> {
+  const inView = lines.flatMap((line) => line.points.filter(([t]) => t >= startMs && t <= endMs).map(([, v]) => v));
+  const range = fitRange(inView, 0.08, 2);
+  if (range === null) return { guides: [0] };
+  return { range, guides: range.low <= 0 && range.high >= 0 ? [0] : [] };
+}
+
 function warmupText(series: IndicatorSeries | undefined, latest: string): string {
   if (!series) return "not published";
   return series.ready ? latest : `warming up (${series.seen}/${series.warmup})`;
@@ -65,12 +104,12 @@ function step(selected: IndicatorPaneId, key: string): IndicatorPaneId | null {
 }
 
 /**
- * The Detail chart's lower dock: Footprint, CVD, RSI, MACD, ATR and TPO, one at a time.
+ * The dock under the Detail and Order Flow charts: Volume, CVD, RSI, MACD, ATR and TPO, one at a time. Both tabs show
+ * the tab the layout names and collapse it together (REQUIREMENTS.md FR-22, ARCHITECTURE.md D-55).
  * The time-series tabs share the chart's window. TPO stays the session profile.
  * Collapsed, only the tab strip shows and no pane is mounted; picking a tab expands it (ARCHITECTURE.md D-39).
- * Order Flow does not mount this dock (REQUIREMENTS.md FR-22).
  */
-export function IndicatorDock({ market, layout, indicators, startMs, endMs, crosshair, showSinglePrints, onReading }: IndicatorDockProps) {
+export function IndicatorDock({ market, layout, candles, indicators, startMs, endMs, crosshair, showSinglePrints, onReading, axisWidth }: IndicatorDockProps) {
   const uid = useId();
   const selected = layout.indicatorPane;
   const collapsed = layout.indicatorDockCollapsed;
@@ -105,36 +144,24 @@ export function IndicatorDock({ market, layout, indicators, startMs, endMs, cros
 
   const indicator = (id: string) => indicators.find((series) => series.id === id);
   const priceFormat = (v: number) => v.toFixed(spec.priceDecimals);
-  const paneModel = (model: Omit<SeriesPaneModel, "startMs" | "endMs">) => ({ ...model, startMs, endMs });
+  const paneModel = (model: Omit<SeriesPaneModel, "startMs" | "endMs">) => ({ ...model, startMs, endMs, axisWidth });
 
   let body: ReactNode = null;
   if (collapsed) {
     // Collapsed: no pane is mounted, so none draws.
-  } else if (selected === "footprint") {
+  } else if (selected === "volume") {
+    const bars = volumePaneBars(candles, market.historyWatermarkMs);
     body = (
       <TimePane
-        label="Footprint"
-        summary={`Footprint of ${market.orderFlow.footprints.length} closed one-minute bars`}
+        label="Volume"
+        summary={`Traded volume of ${bars.length} bars, warmup bars without an aggressor side`}
         className="pane-fill"
         crosshair={crosshair}
-        draw={(surface) =>
-          drawFootprint(surface, {
-            startMs,
-            endMs,
-            bars: market.orderFlow.footprints,
-            developing: market.orderFlow.developingFootprint ?? null,
-            spec,
-            missingRanges: market.profiles.flatMap((profile) => profile.missingRanges),
-            approximateRanges: market.profiles.flatMap((profile) => profile.approximateRanges),
-          })
-        }
+        draw={(surface) => drawVolumePane(surface, { startMs, endMs, bars, axisWidth })}
       />
     );
   } else if (selected === "cvd") {
-    const cvdPoints: [number, number][] = [
-      ...market.orderFlow.cvdPoints.map((p): [number, number] => [p[0], p[1]]),
-      [now, market.orderFlow.cvd],
-    ];
+    const lines = market.status.cvdKnown ? cvdLines(market.orderFlow.cvdPoints, market.orderFlow.cvd, now, market.historyWatermarkMs) : [];
     body = (
       <TimePane
         label="Cumulative volume delta"
@@ -148,8 +175,8 @@ export function IndicatorDock({ market, layout, indicators, startMs, endMs, cros
               title: "CVD (session)",
               subtitle: market.status.cvdKnown ? formatSigned(market.orderFlow.cvd) : "unknown",
               dimmed: !market.status.cvdKnown,
-              lines: market.status.cvdKnown ? [{ points: cvdPoints, color: colors.bid }] : [],
-              guides: [0],
+              lines,
+              ...cvdScale(lines, startMs, endMs),
               format: (v) => formatQty(v),
             }),
           )

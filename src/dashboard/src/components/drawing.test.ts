@@ -9,10 +9,10 @@ import { fromSnapshot, type VwapPoint } from "../domain/merge.ts";
 import { fakeSurface } from "../test/fakeCanvas.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { mainChartDrawKey } from "./chartDrawKey.ts";
-import { FOOTPRINT_GROUND, drawFootprint, footprintCacheKey, type FootprintModel } from "./drawFootprint.ts";
+import { FOOTPRINT_DELTA_STRIP, FOOTPRINT_GROUND, drawFootprint, footprintCacheKey, splitCellAlpha, type FootprintModel } from "./drawFootprint.ts";
 import { HISTORY_WITHOUT_TAPE, TAPE_STARTS_HERE } from "../domain/volumeDots.ts";
 import { canvasTheme, colors } from "../theme.ts";
-import { drawMainChart, type MainChartModel } from "./drawMainChart.ts";
+import { TIME_AXIS_HEIGHT, drawMainChart, type MainChartModel } from "./drawMainChart.ts";
 
 const market = fromSnapshot(snapshotFixture(), 5, 0);
 const candles = aggregateCandles(market.bars, market.developingBar, market.serverTimeMs);
@@ -201,6 +201,19 @@ describe("mainChartDrawKey", () => {
     canvasTheme.set("light");
 
     expect(mainChartDrawKey(base, 800, 400, 1, 0)).toBe(mainChartDrawKey(base, 800, 400, 1, 0, "light"));
+  });
+
+  it("should change when the footprint main chart's forming bar changes, and when the chart switches to the footprint", () => {
+    const window = { startMs: market.serverTimeMs - 5 * 60_000, endMs: market.serverTimeMs + 10_000 };
+    const forming = bar({ t: market.serverTimeMs - 30_000, c: [27_400, 1, 2, 0] });
+    const layer = { bars: market.orderFlow.footprints, developing: forming, missingRanges: [], approximateRanges: [] };
+    const footprint = model({ ...window, footprint: layer });
+    const traded = model({ ...window, footprint: { ...layer, developing: { ...forming, c: [27_400, 1, 3, 0] } } });
+    const closedOutOfView = model({ ...window, footprint: { ...layer, bars: [...layer.bars, bar({ t: 0 })] } });
+
+    expect(mainChartDrawKey(footprint, 800, 400)).not.toBe(mainChartDrawKey(model(window), 800, 400));
+    expect(mainChartDrawKey(traded, 800, 400)).not.toBe(mainChartDrawKey(footprint, 800, 400));
+    expect(mainChartDrawKey(closedOutOfView, 800, 400)).toBe(mainChartDrawKey(footprint, 800, 400));
   });
 
   it("should stay the same when the live edge moves by less than a pixel", () => {
@@ -511,6 +524,8 @@ describe("footprintCacheKey", () => {
       bars,
       developing: bars[0] ? { ...bars[0], t: market.serverTimeMs - 30_000, delta: 1, v: 4 } : null,
       spec: market.instrument,
+      lowTicks: 27_060,
+      highTicks: 27_840,
     };
     const forming = footprint.developing ? { ...footprint.developing, delta: 8, v: 20 } : null;
 
@@ -521,7 +536,7 @@ describe("footprintCacheKey", () => {
 
   it("should change when a closed bar's delta changes", () => {
     const bars = market.orderFlow.footprints;
-    const footprint = { startMs: bars[0]?.t ?? 0, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument };
+    const footprint = { startMs: bars[0]?.t ?? 0, endMs: market.serverTimeMs, lowTicks: 27_060, highTicks: 27_840, bars, developing: null, spec: market.instrument };
     const changed = bars.map((bar, index) => (index === 0 ? { ...bar, delta: bar.delta + 1 } : bar));
 
     expect(footprintCacheKey({ ...footprint, bars: changed }, 1000, 300)).not.toBe(footprintCacheKey(footprint, 1000, 300));
@@ -532,6 +547,8 @@ describe("footprintCacheKey", () => {
     const footprint = {
       startMs: bars[0]?.t ?? 0,
       endMs: market.serverTimeMs,
+      lowTicks: 27_060,
+      highTicks: 27_840,
       bars,
       developing: null,
       spec: market.instrument,
@@ -601,7 +618,7 @@ function bar(overrides: Partial<Footprint> = {}): Footprint {
 }
 
 function footprintOf(closed: Footprint): FootprintModel {
-  return { startMs: 0, endMs: 120_000, bars: [closed], developing: null, spec: market.instrument };
+  return { startMs: 0, endMs: 120_000, lowTicks: 96, highTicks: 106, bars: [closed], developing: null, spec: market.instrument };
 }
 
 /** The old cache key added these fields, so equal sums hid a different bar. */
@@ -610,6 +627,62 @@ function summedFields(closed: Footprint): number {
 }
 
 describe("drawFootprint", () => {
+  it("should put each cell's row on the price window when the chart is panned or zoomed", () => {
+    const closed = bar({ t: 0, c: [102, 1, 50, 1, 101, 40, 2, -1, 100, 3, 5, 0] });
+    const rowOf = (lowTicks: number, highTicks: number) => {
+      const { surface, calls } = fakeSurface(800, 240);
+      const geometry = drawFootprint(surface, { ...footprintOf(closed), lowTicks, highTicks });
+      const sell = withAlpha(colors.down, splitCellAlpha(1, 50, false));
+      const cell = calls.find((call) => call.method === "fillRect" && call.fillStyle === sell);
+      return { y: cell?.args[1], height: cell?.args[3], top: geometry.price.toPx(102.5), row: Math.abs(geometry.price.toPx(0) - geometry.price.toPx(1)) };
+    };
+
+    const fitted = rowOf(96, 106);
+    const shifted = rowOf(100, 110);
+
+    expect(fitted.y).toBeCloseTo(fitted.top, 6);
+    expect(fitted.height).toBeCloseTo(fitted.row - 1, 6);
+    expect(shifted.y).toBeCloseTo(shifted.top, 6);
+    expect(shifted.y).not.toBeCloseTo(fitted.y as number, 0);
+  });
+
+  it("should still draw a bar only a pixel or two wide when the window is four hours long", () => {
+    const { surface, calls } = fakeSurface(800, 400);
+    const closed = bar({ t: 7_200_000, c: [100, 3, 5, 0] });
+
+    const geometry = drawFootprint(surface, { ...footprintOf(closed), startMs: 0, endMs: 14_400_000 });
+
+    const left = geometry.time.toPx(closed.t);
+    const cells = calls.filter(
+      (call) => call.method === "fillRect" && String(call.fillStyle).startsWith(withAlpha(colors.up, 0).replace(/0\)$/, "")) && call.args[0] === left,
+    );
+    expect(geometry.time.toPx(closed.t + closed.d) - left).toBeLessThan(6);
+    expect(cells).toHaveLength(1);
+    expect(cells[0]?.args[2]).toBeGreaterThanOrEqual(1);
+  });
+
+  it("should give the main chart its plot, its price scale and a delta row above the time axis", () => {
+    const { surface } = fakeSurface(800, 400);
+
+    const geometry = drawFootprint(surface, footprintOf(bar({ t: 0 })));
+
+    expect(geometry.plotLeft).toBe(0);
+    expect(geometry.plotHeight).toBe(400 - TIME_AXIS_HEIGHT - FOOTPRINT_DELTA_STRIP);
+    expect(geometry.timeAxisTop).toBe(400 - TIME_AXIS_HEIGHT);
+    expect(geometry.price.toPx(106)).toBeCloseTo(0, 6);
+    expect(geometry.price.toPx(96)).toBeCloseTo(geometry.plotHeight, 6);
+    expect(geometry.markers).toEqual([]);
+  });
+
+  it("should print a bar's delta in the row under the plot when the bar is wide enough", () => {
+    const { surface, calls } = fakeSurface(800, 400);
+
+    const geometry = drawFootprint(surface, footprintOf(bar({ t: 0, delta: 7 })));
+
+    const delta = calls.find((call) => call.method === "fillText" && call.args[0] === "+7");
+    expect(delta?.args[2]).toBeCloseTo(geometry.plotHeight + FOOTPRINT_DELTA_STRIP / 2, 6);
+  });
+
   it("should mark a repaired minute as approximate and an unrepaired hole as missing", () => {
     const { surface, calls } = fakeSurface(800, 240);
     const bar = market.orderFlow.footprints[0];
@@ -620,6 +693,8 @@ describe("drawFootprint", () => {
     drawFootprint(surface, {
       startMs: bar.t - 1_000,
       endMs: missingBar.t + bar.d + 1_000,
+      lowTicks: 27_060,
+      highTicks: 27_840,
       bars: [bar, missingBar],
       developing: null,
       spec: market.instrument,
@@ -689,7 +764,7 @@ describe("drawFootprint", () => {
     const { surface, calls } = fakeSurface(1200, 300);
     const bars = market.orderFlow.footprints;
 
-    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, bars, developing: null, spec: market.instrument });
+    drawFootprint(surface, { startMs: (bars[0]?.t ?? 0) - 60_000, endMs: market.serverTimeMs, lowTicks: 27_068, highTicks: 27_084, bars, developing: null, spec: market.instrument });
 
     const texts = calls.filter((c) => c.method === "fillText").map((c) => String(c.args[0]));
     expect(bars.every((b) => texts.includes(b.delta > 0 ? `+${b.delta.toLocaleString("en-US")}` : String(b.delta)))).toBe(true);

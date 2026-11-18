@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
-import type { MarketState } from "../domain/merge.ts";
+import { indicatorsForViewer, type MarketState } from "../domain/merge.ts";
 import { aggregateCandles } from "../domain/candles.ts";
 import { chartZoomIn, chartZoomOut } from "../domain/chartCursor.ts";
 import { formatLocalTime, formatQty, formatTicks } from "../domain/format.ts";
@@ -44,9 +44,9 @@ import {
   sliceBucketMs,
   sliceVolumeDots,
   tooltipBox,
-  volumeStripBars,
   zoomPriceAbout,
 } from "../domain/bookmap.ts";
+import { createCrosshairStore, type CrosshairStore } from "../hooks/crosshair.ts";
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
 import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
@@ -55,6 +55,7 @@ import { useWheelGate } from "../hooks/useWheelGate.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { drawBookmap, drawBookmapHover, type BookmapHeatScale } from "./drawBookmap.ts";
 import { Hint } from "./Hint.tsx";
+import { IndicatorDock } from "./IndicatorDock.tsx";
 import { PriceControls } from "./PriceControls.tsx";
 
 /** Props of the Bookmap tab. It reads the live market and the saved layout, and it places no order. */
@@ -65,6 +66,11 @@ export interface BookmapViewProps {
   readonly onReading: (change: (current: LayoutSettings) => LayoutSettings) => void;
   /** Changes the shared view window. Shift+wheel writes `priceZoom` here, the same zoom Detail uses. */
   readonly onWindow: (change: (current: ViewWindow) => ViewWindow) => void;
+  /**
+   * The route's crosshair store, the one Detail's chart and dock use. The plot's hover writes its time here, so the
+   * dock below draws it. Without one the view makes its own.
+   */
+  readonly crosshair?: CrosshairStore;
 }
 
 /** A plot pan: the pointer, where it went down, and the price shift and time offset when it did. */
@@ -116,19 +122,19 @@ function localPoint(stage: HTMLElement, clientX: number, clientY: number): { x: 
   return { x: clientX - rect.left, y: clientY - rect.top };
 }
 
-function hitZone(frame: BookmapFrame, x: number, y: number): "plot" | "price" | "time" | "other" {
-  const { plot, price, volume } = frame;
-  if (volume && x >= volume.x && x <= volume.x + volume.w && y >= volume.y && y <= volume.y + volume.h) return "time";
+function hitZone(frame: BookmapFrame, x: number, y: number): "plot" | "price" | "other" {
+  const { plot, price } = frame;
   if (x >= plot.x && x <= plot.x + plot.w && y >= plot.y && y <= plot.y + plot.h) return "plot";
   if (x >= price.x && x <= price.x + price.w && y >= price.y && y <= price.y + price.h) return "price";
   return "other";
 }
 
 /**
- * Trader Jon's volume-dot and RIPS layout: heatmap, dots, a docked book and profile, the volume strip and CVD.
- * Detail and Overview do not mount this view (REQUIREMENTS.md FR-67). Nothing here calls a broker (REQUIREMENTS.md FR-6).
+ * Trader Jon's volume-dot and RIPS layout: heatmap, dots, a docked book and profile, and below the chart the indicator
+ * dock Detail shows (Volume, CVD, RSI, MACD, ATR, TPO) on the chart's time axis, in place of the volume strip and the
+ * CVD subchart. Detail and Overview do not mount this view (REQUIREMENTS.md FR-67). Nothing here calls a broker (REQUIREMENTS.md FR-6).
  */
-export function BookmapView({ market, layout, viewWindow, onReading, onWindow }: BookmapViewProps) {
+export function BookmapView({ market, layout, viewWindow, onReading, onWindow, crosshair: sharedCrosshair }: BookmapViewProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -136,8 +142,8 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
   const takesWheel = useWheelGate();
   const [showBbo, setShowBbo] = useState(true);
   const [showPnc, setShowPnc] = useState(true);
-  const [showVolume, setShowVolume] = useState(true);
-  const [showCvd, setShowCvd] = useState(true);
+  const [ownCrosshair] = useState(createCrosshairStore);
+  const crosshair = sharedCrosshair ?? ownCrosshair;
   const [hover, setHover] = useState<{ readonly timeMs: number; readonly priceTicks: number } | null>(null);
   // The vertical pan is per visit. Changing instrument, including a return to one already dragged, starts fitted again.
   const [shiftTicks, setShiftTicks] = useState(0);
@@ -181,6 +187,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     pinchRef.current = null;
   }, [market.root]);
   const sessionProfile = market.profiles.find((item) => item.window === "session") ?? null;
+  const indicators = useMemo(() => indicatorsForViewer(market.indicators, layout.indicatorMinutes), [market.indicators, layout.indicatorMinutes]);
   const footprints = useMemo(
     () =>
       market.orderFlow.developingFootprint
@@ -214,7 +221,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     const candles = aggregateCandles(sourceBars, sourceDeveloping, market.serverTimeMs, bucketMs);
     const minuteHeat = market.developingMinuteHeat ? [...market.minuteHeat, market.developingMinuteHeat] : market.minuteHeat;
     const heatColumns = aggregateHeat(minuteHeat.length > 0 ? minuteHeat : market.heat, bucketMs);
-    const frame = bookmapFrame(Math.max(width, 1), Math.max(height, 1), { volume: showVolume, cvd: showCvd });
+    const frame = bookmapFrame(Math.max(width, 1), Math.max(height, 1));
     const levels = bookmapLevels({
       preset: layout.preset,
       hideValueArea: layout.hideValueArea,
@@ -245,7 +252,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
         bids: market.ladder.bids,
         asks: market.ladder.asks,
       }),
-      strip: volumeStripBars(candles, market.historyWatermarkMs),
       summary: liveCvdSummary({
         cvd: market.orderFlow.cvd,
         cvdKnown: market.status.cvdKnown,
@@ -260,7 +266,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
         market.liquidity.bestAsk == null,
       bookKnown,
     };
-  }, [market, layout.chartMinutes, layout.preset, layout.hideValueArea, width, height, showVolume, showCvd, sessionProfile]);
+  }, [market, layout.chartMinutes, layout.preset, layout.hideValueArea, width, height, sessionProfile]);
 
   const sceneBase = useMemo(() => {
     const historyMs = market.historyMinutes * 60_000;
@@ -434,9 +440,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       guide: showPnc ? scene.guide : null,
       cob: scene.cob,
       svp: scene.svp,
-      volume: scene.strip,
-      cvdPoints: market.orderFlow.cvdPoints,
-      cvdSummary: scene.summary,
       spec: market.instrument,
       lastPriceTicks: lastPrint?.priceTicks ?? scene.candles.at(-1)?.c ?? null,
       hover: null,
@@ -458,8 +461,13 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
     });
   }, [hover, scene.frame, scene.startMs, scene.endMs, scene.range.low, scene.range.high, market.instrument, width, height, fontEpoch, palette]);
 
+  // The plot's hover is the dock's crosshair time, as Detail's chart is for its panes.
+  useEffect(() => {
+    crosshair.set({ timeMs: hover?.timeMs ?? null, priceTicks: null });
+  }, [crosshair, hover]);
+
   // The wheel is native because React's listener is passive and cannot stop the page from scrolling.
-  // The plot and the time strip zoom time. The PRICE column, and Shift+wheel on the plot, zoom price (D-36).
+  // The plot zooms time. The PRICE column, and Shift+wheel on the plot, zoom price (D-36).
   // None of them takes the wheel while a box that can scroll cuts the plot off, or a page scroll is still running (D-53).
   useEffect(() => {
     const stage = stageRef.current;
@@ -470,7 +478,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       const local = localPoint(stage, event.clientX, event.clientY);
       const where = hitZone(current.frame, local.x, local.y);
       const priceWheel = where === "price" || (where === "plot" && event.shiftKey);
-      const timeWheel = where === "plot" || where === "time";
+      const timeWheel = where === "plot";
       if (!priceWheel && !timeWheel) return;
       if (!takesWheel(event, stage, current.frame.plot)) return;
       const delta = priceWheelDelta(event);
@@ -618,7 +626,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
       return;
     }
     const point = plotPoint(event);
-    // COB, SVP, the volume strip and the CVD subchart are not the price plot, so a press there does not pan.
+    // COB and SVP are not the price plot, so a press there does not pan.
     if (!point) return;
     setHover(point);
     const span = scene.range.high - scene.range.low;
@@ -874,24 +882,6 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
               </Hint>
             </div>
             <div className="bookmap-display-item">
-              <Hint label="Bottom Volume Strip" text={hints.displayVolume}>
-                {(hint) => (
-                  <button type="button" {...hint} aria-pressed={showVolume} onClick={() => setShowVolume((on) => !on)}>
-                    Bottom Volume Strip
-                  </button>
-                )}
-              </Hint>
-            </div>
-            <div className="bookmap-display-item">
-              <Hint label="CVD Subchart" text={hints.displayCvd}>
-                {(hint) => (
-                  <button type="button" {...hint} aria-pressed={showCvd} onClick={() => setShowCvd((on) => !on)}>
-                    CVD Subchart
-                  </button>
-                )}
-              </Hint>
-            </div>
-            <div className="bookmap-display-item">
               <Hint label="Event key" text={hints.displayKey}>
                 {(hint) => (
                   <button type="button" {...hint} aria-pressed={showKey} onClick={() => setShowKey((on) => !on)}>
@@ -966,6 +956,18 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
           </div>
         )}
       </div>
+      <IndicatorDock
+        market={market}
+        layout={layout}
+        candles={scene.candles}
+        indicators={indicators}
+        startMs={scene.startMs}
+        endMs={scene.endMs}
+        crosshair={crosshair}
+        showSinglePrints={isSignalOn(layout, "SinglePrints")}
+        onReading={onReading}
+        axisWidth={width >= 8 ? width - scene.frame.plot.w : undefined}
+      />
       <dl className="bookmap-readout" aria-label="Order Flow readout">
         <div>
           <dt>Time</dt>
@@ -1010,7 +1012,9 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow }:
           <dd>
             {scene.summary.lastPriceTicks === null
               ? "—"
-              : `${formatTicks(scene.summary.lastPriceTicks, market.instrument)} · CVD ${scene.summary.note}`}
+              : `${formatTicks(scene.summary.lastPriceTicks, market.instrument)}${
+                  scene.summary.lastQuantity === null ? "" : ` × ${formatQty(scene.summary.lastQuantity)}`
+                } · CVD ${scene.summary.note}`}
           </dd>
         </div>
       </dl>

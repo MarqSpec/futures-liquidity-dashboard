@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { snapshotFixture } from "../test/fixtures.ts";
 import { barOverlapsMissing } from "../components/drawFootprint.ts";
-import { decodeFootprint, footprintPoc, footprintRows } from "./footprint.ts";
+import { decodeFootprint, footprintPoc } from "./footprint.ts";
 
 const bar = (c: number[]) => ({ t: 0, d: 60_000, v: 0, delta: 0, maxDelta: 0, minDelta: 0, c });
 
@@ -49,13 +49,5 @@ describe("barOverlapsMissing", () => {
     expect(barOverlapsMissing(120_000, 60_000, [[30_000, 100_000]])).toBe(false);
     expect(barOverlapsMissing(60_000, 60_000, [[30_000, 100_000]])).toBe(true);
     expect(barOverlapsMissing(100_000, 60_000, [[30_000, 100_000]])).toBe(false);
-  });
-});
-
-describe("footprintRows", () => {
-  it("should merge the prices of several bars highest first without gaps when given two bars", () => {
-    const rows = footprintRows([decodeFootprint(bar([100, 1, 1, 0, 300, 1, 1, 0])), decodeFootprint(bar([101, 1, 0, 0]))]);
-
-    expect(rows).toEqual([300, 101, 100]);
   });
 });

@@ -653,6 +653,9 @@ p {
 .chart-price-controls {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
+  /* The Main chart switch and the Price group, apart, wrapping on a narrow screen. */
+  gap: var(--space-4) var(--space-12);
   align-items: center;
   padding: var(--space-4) var(--space-8);
   background: var(--surface-container);
@@ -783,11 +786,13 @@ p {
 /* Never taller than the window, the visible height of the box that scrolls it, so the whole plot can come into view
    and the wheel can zoom it (D-53); a short window shrinks the stage below its minimum. svh is #root's height on a
    phone; the vh line is the fallback for a browser without it. */
+/* The indicator dock sits under it with Detail's share of the height; collapsed, the stage takes that height too. The
+   minimum is the old 420 px less the dock's 168 px, so the stage and the dock fit where the stage and its strips did. */
 .bookmap-stage {
   position: relative;
-  flex: 1 1 auto;
-  min-height: min(420px, 100vh);
-  min-height: min(420px, 100svh);
+  flex: 5 1 0;
+  min-height: min(252px, 100vh);
+  min-height: min(252px, 100svh);
   max-height: 100vh;
   max-height: 100svh;
   cursor: grab;

@@ -103,6 +103,8 @@ export function canvasColors(theme: ThemeId) {
     unknown: color("unknown"),
     aggressorBuy: color("aggressor-buy"),
     aggressorSell: color("aggressor-sell"),
+    /** Warmup and unsided volume: no aggressor side, never up or down (REQUIREMENTS.md FR-61). */
+    warmup: color("warmup"),
     vwap: color("vwap"),
     crosshair: color("crosshair"),
     lastPrice: color("last-price"),

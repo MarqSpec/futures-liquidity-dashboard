@@ -31,8 +31,8 @@ describe("drawBookmap", () => {
     expect(painted).not.toContain("Liquidity sweep");
     expect(painted).toContain(READ_ONLY_TRAIL);
     expect(painted).toContain("Not an order");
-    expect(painted).toContain("LIVE CVD");
-    expect(painted).toContain("+9");
+    // — CVD is a dock tab now.
+    expect(painted).not.toContain("LIVE CVD");
     expect(painted).toContain("PDH");
     expect(painted).toContain("HVN");
     const sweep = eventMarker("LiquiditySweep").color;
@@ -154,39 +154,6 @@ describe("drawBookmap", () => {
     drawBookmap(surface, model({ bboStale: true }));
 
     expect(texts(calls)).toContain("BBO unknown");
-  });
-
-  it("should print unknown and draw no CVD line when CVD is not known", () => {
-    const frame = bookmapFrame(1100, 640, { volume: true, cvd: true });
-    const cvd = frame.cvd;
-    const inCvd = (calls: readonly { method: string; args: readonly unknown[] }[]) =>
-      calls.filter((call) => {
-        if (call.method !== "moveTo" && call.method !== "lineTo") return false;
-        const y = call.args[1];
-        return cvd !== null && typeof y === "number" && y >= cvd.y && y <= cvd.y + cvd.h;
-      });
-    const known = fakeSurface(1100, 640);
-    drawBookmap(known.surface, model({ frame }));
-    expect(inCvd(known.calls).length).toBeGreaterThan(0);
-
-    const { surface, calls } = fakeSurface(1100, 640);
-    drawBookmap(
-      surface,
-      model({
-        frame,
-        cvdPoints: [
-          [60_000, 42],
-          [120_000, 99],
-        ],
-        cvdSummary: { cvd: 42, cvdKnown: false, lastQuantity: null, lastPriceTicks: null, warmup: false, note: "CVD unknown" },
-      }),
-    );
-    const painted = texts(calls).join(" ");
-
-    expect(painted).toContain("unknown");
-    expect(painted).not.toContain("42");
-    expect(painted).not.toContain("+42");
-    expect(inCvd(calls)).toEqual([]);
   });
 });
 
@@ -331,7 +298,7 @@ describe("drawBookmap colours", () => {
   it("should stroke the warmup line, candle wicks and best bid and ask 1px with miter joins on every frame when a labelled dot was drawn before", () => {
     // The dot label's halo is 3px with round joins; it must not reach the next frame's strokes.
     const { surface, calls } = fakeSurface(1100, 640);
-    const drawn = model({ frame: bookmapFrame(1100, 640, { volume: true, cvd: false }), hover: null, signals: [], reclaims: [], guide: null, showPnc: false });
+    const drawn = model({ frame: bookmapFrame(1100, 640), hover: null, signals: [], reclaims: [], guide: null, showPnc: false });
     const strokes = (from: number, to: number) =>
       calls
         .slice(from, to)
@@ -350,15 +317,14 @@ describe("drawBookmap colours", () => {
     expect(new Set(ofWatched)).toEqual(new Set(watched.map((style) => `${style}@1/miter`)));
   });
 
-  it("should set its own stroke width, and the CVD line its own join, when the context arrives with another draw's state", () => {
+  it("should set its own stroke width when the context arrives with another draw's state", () => {
     // Each stroke owns its state, so none depends on what an earlier draw left behind.
     const plain = { hover: null, signals: [], reclaims: [], guide: null, showPnc: false, dots: [] };
-    const noCvd = bookmapFrame(1100, 640, { volume: true, cvd: false });
+    const frame = bookmapFrame(1100, 640);
     const cases = [
-      { name: "warmup", drawn: model({ ...plain, frame: noCvd }), styles: [color("warmup")], expected: "1" },
-      { name: "candles", drawn: model({ ...plain, frame: noCvd, historyWatermarkMs: null }), styles: [color("up")], expected: "1" },
-      { name: "bbo", drawn: model({ ...plain, frame: noCvd, historyWatermarkMs: null, showCandles: false, levels: [] }), styles: [color("bid"), color("ask")], expected: "1" },
-      { name: "cvd", drawn: model({ ...plain, historyWatermarkMs: null, showCandles: false, levels: [], showBbo: false }), styles: [color("up")], expected: "1.4/miter" },
+      { name: "warmup", drawn: model({ ...plain, frame }), styles: [color("warmup")], expected: "1" },
+      { name: "candles", drawn: model({ ...plain, frame, historyWatermarkMs: null }), styles: [color("up")], expected: "1" },
+      { name: "bbo", drawn: model({ ...plain, frame, historyWatermarkMs: null, showCandles: false, levels: [] }), styles: [color("bid"), color("ask")], expected: "1" },
     ];
     const seen = cases.map(({ name, drawn, styles, expected }) => {
       const { surface, calls } = fakeSurface(1100, 640);
@@ -434,45 +400,18 @@ describe("drawBookmap colours", () => {
     expect(lastBefore(calls, "26.75", "fillRect", "fillStyle")).toBe(color("price-tag"));
   });
 
-  it("should paint the stage, the dock and the strips on the surface tokens and the book and profile on their sides when a frame is painted", () => {
+  it("should paint the stage and the dock on the surface tokens and the book and profile on their sides when a frame is painted", () => {
     const { calls } = paint(model());
     const fills = calls.filter((call) => call.method === "fillRect").map((call) => call.fillStyle);
 
     expect(fills[0]).toBe(color("surface-lowest"));
-    expect(fills).toEqual(expect.arrayContaining([color("surface-low"), color("surface-container")]));
-    expect(fills).toEqual(expect.arrayContaining([color("bid"), color("ask"), color("aggressor-buy"), color("aggressor-sell")]));
-  });
-
-  it("should stroke the live CVD line in up when CVD is positive and down when negative, and warmup in warmup", () => {
-    const frame = bookmapFrame(1100, 640, { volume: true, cvd: true });
-    const cvd = frame.cvd;
-    const strokesInCvd = (calls: readonly CanvasCall[]) =>
-      calls
-        .filter((call) => call.method === "lineTo" && cvd !== null && typeof call.args[1] === "number" && call.args[1] >= cvd.y && call.args[1] <= cvd.y + cvd.h)
-        .map((call) => call.strokeStyle);
-    const points: readonly (readonly [number, number])[] = [[0, 0], [20_000, 0], [60_000, -4], [90_000, 6], [120_000, 9]];
-    const summary = (value: number) => ({ cvd: value, cvdKnown: true, lastQuantity: 3, lastPriceTicks: 107, warmup: false, note: "live" });
-    const up = strokesInCvd(paint(model({ frame, cvdPoints: points, cvdSummary: summary(9) })).calls);
-    const down = strokesInCvd(paint(model({ frame, cvdPoints: points, cvdSummary: summary(-12) })).calls);
-
-    expect(new Set(up)).toEqual(new Set([color("warmup"), color("up")]));
-    expect(new Set(down)).toEqual(new Set([color("warmup"), color("down")]));
-  });
-
-  it("should print the live CVD card: a signed value in data-xl and its colour, the last print and the warmup line when CVD is known", () => {
-    const up = paint(model());
-    const down = paint(model({ cvdSummary: { cvd: -12, cvdKnown: true, lastQuantity: 3, lastPriceTicks: 107, warmup: false, note: "live" } }));
-
-    expect(filledText(up.calls, "+9")).toBe(color("up"));
-    expect(up.fonts.get("+9")).toBe(`600 20px ${fontFamilies.mono}`);
-    expect(filledText(down.calls, "−12")).toBe(color("down"));
-    expect(filledText(up.calls, "Last 26.75 × 3")).toBe(color("on-surface-muted"));
-    expect(filledText(up.calls, "Warmup CVD: 0 (no side)")).toBe(color("on-surface-muted"));
+    expect(fills).toEqual(expect.arrayContaining([color("surface-low")]));
+    expect(fills).toEqual(expect.arrayContaining([color("bid"), color("ask")]));
   });
 
   it("should set the column heads in label-sm capitals and every other label in IBM Plex Mono when a frame is painted", () => {
     const { fonts } = paint(model());
-    const heads = ["PRICE", "COB (L2)", "SVP (B/S)", "LIVE CVD"];
+    const heads = ["PRICE", "COB (L2)", "SVP (B/S)"];
 
     for (const head of heads) expect(fonts.get(head)).toBe(`600 11px ${fontFamilies.sans}`);
     const others = [...fonts.entries()].filter(([text]) => !heads.includes(text));

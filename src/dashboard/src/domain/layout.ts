@@ -51,11 +51,22 @@ export const eventDotSizes = ["small", "medium", "large"] as const;
 export type EventDotSize = (typeof eventDotSizes)[number];
 
 /**
- * The Detail indicator dock, one tab at a time (REQUIREMENTS.md FR-22). Order Flow does not use this dock.
- * `footprint` is the tab a layout shows when it names none. `indicatorDockCollapsed` hides the tab and keeps the strip.
+ * The indicator dock, one tab at a time (REQUIREMENTS.md FR-22), under the Detail and Order Flow charts alike.
+ * `volume` is the tab a layout shows when it names none. `indicatorDockCollapsed` hides the tab and keeps the strip.
  */
-export const indicatorPanes = ["footprint", "cvd", "rsi14", "macd", "atr14", "tpo"] as const;
+export const indicatorPanes = ["volume", "cvd", "rsi14", "macd", "atr14", "tpo"] as const;
 export type IndicatorPaneId = (typeof indicatorPanes)[number];
+
+/** The dock tab before the footprint became Detail's main chart. A layout that still names it opens Volume. */
+const RETIRED_FOOTPRINT_PANE = "footprint";
+
+function withoutRetiredPane(value: unknown): unknown {
+  return value === RETIRED_FOOTPRINT_PANE ? "volume" : value;
+}
+
+/** Detail's main chart (REQUIREMENTS.md FR-22, ARCHITECTURE.md D-55): the footprint by default, or the price chart. */
+export const detailCharts = ["footprint", "price"] as const;
+export type DetailChartId = (typeof detailCharts)[number];
 
 /**
  * The Detail side-column sections that fold to their heading, in the column's order (ARCHITECTURE.md D-49).
@@ -72,7 +83,7 @@ function inColumnOrder(keys: readonly unknown[]): SideSectionId[] {
 /**
  * The pane ids the API's LayoutSettings accepts (MarqSpec.FuturesLiquidityDashboard.Api/Layouts/LayoutSettings.cs).
  * `footprint`, `cvd`, `rsi14`, `macd`, `atr14` and `tpo` stay here so an older layout still saves. They no longer
- * drive the Detail dock; `indicatorPane` does (REQUIREMENTS.md FR-22). The same six are listed in `collapsedByDefault` below
+ * drive the Detail dock or the main chart; `indicatorPane` and `detailChart` do (REQUIREMENTS.md FR-22). The same six are listed in `collapsedByDefault` below
  * only so `isPaneOn` stays false for them.
  */
 export const paneIds = [
@@ -173,8 +184,9 @@ export const layoutSchema = z.object({
   dotMinQuantity: z.number().int().min(1).max(10_000).catch(1),
   eventDotSize: z.enum(eventDotSizes).catch("medium"),
   centerPrice: z.boolean().catch(false),
-  indicatorPane: z.enum(indicatorPanes).catch("footprint"),
+  indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).catch("volume"),
   indicatorDockCollapsed: z.boolean().catch(false),
+  detailChart: z.enum(detailCharts).catch("footprint"),
   sideSectionsCollapsed: z.array(z.unknown()).transform(inColumnOrder).catch(() => []),
   showPriceLine: z.boolean().catch(true),
   hideValueArea: z.boolean().catch(false),
@@ -205,8 +217,9 @@ export const defaultLayout: LayoutSettings = {
   dotMinQuantity: 1,
   eventDotSize: "medium",
   centerPrice: false,
-  indicatorPane: "footprint",
+  indicatorPane: "volume",
   indicatorDockCollapsed: false,
+  detailChart: "footprint",
   sideSectionsCollapsed: [],
   showPriceLine: true,
   hideValueArea: false,
@@ -244,8 +257,9 @@ export const storedLayoutSchema = z.object({
   dotMinQuantity: z.number().int().min(1).max(10_000).default(1),
   eventDotSize: z.enum(eventDotSizes).default("medium"),
   centerPrice: z.boolean().default(false),
-  indicatorPane: z.enum(indicatorPanes).default("footprint"),
+  indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).default("volume"),
   indicatorDockCollapsed: z.boolean().default(false),
+  detailChart: z.enum(detailCharts).default("footprint"),
   sideSectionsCollapsed: z.array(z.enum(sideSections)).transform(inColumnOrder).default(() => []),
   showPriceLine: z.boolean().default(true),
   hideValueArea: z.boolean().default(false),
@@ -308,8 +322,17 @@ export function withIndicatorPane(layout: LayoutSettings, pane: IndicatorPaneId)
   return { ...layout, indicatorPane: pane };
 }
 
+/** The layout showing one Detail main chart. The same layout comes back when that chart is already shown. */
+export function withDetailChart(layout: LayoutSettings, chart: DetailChartId): LayoutSettings {
+  if (layout.detailChart === chart) {
+    return layout;
+  }
+  return { ...layout, detailChart: chart };
+}
+
 /**
- * The layout with the Detail indicator dock collapsed to its tab strip, or expanded (ARCHITECTURE.md D-39).
+ * The layout with the indicator dock, on Detail and Order Flow, collapsed to its tab strip, or expanded
+ * (ARCHITECTURE.md D-39).
  * The same layout comes back when the dock is already in that state.
  */
 export function withIndicatorDockCollapsed(layout: LayoutSettings, collapsed: boolean): LayoutSettings {

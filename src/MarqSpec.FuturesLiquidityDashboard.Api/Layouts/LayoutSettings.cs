@@ -25,7 +25,10 @@ public sealed record LayoutSettings
 
     public const int MaxWatchlist = 12;
 
-    private const string FootprintPane = "footprint";
+    private const string VolumePane = "volume";
+
+    // The dock's tab before the footprint became Detail's main chart. An older client still sends it.
+    private const string RetiredFootprintPane = "footprint";
 
     /// <summary>
     /// Fields on the first layout document. A PUT that omits one still stores its default. Every other public
@@ -211,26 +214,43 @@ public sealed record LayoutSettings
 
     private bool _centerPrice;
 
-    private string _indicatorPane = FootprintPane;
+    private string _indicatorPane = VolumePane;
 
     /// <summary>
-    /// The Detail indicator dock tab (REQUIREMENTS.md FR-22): <c>footprint</c>, <c>cvd</c>, <c>rsi14</c>, <c>macd</c>,
-    /// <c>atr14</c> or <c>tpo</c>. One tab is shown; <see cref="IndicatorDockCollapsed"/> hides it and keeps the tab strip.
-    /// Order Flow does not read this.
+    /// The indicator dock tab (REQUIREMENTS.md FR-22): <c>volume</c>, <c>cvd</c>, <c>rsi14</c>, <c>macd</c>,
+    /// <c>atr14</c> or <c>tpo</c>, default <c>volume</c>. One tab is shown; <see cref="IndicatorDockCollapsed"/> hides it
+    /// and keeps the tab strip. Detail and Order Flow both show this dock and read this one tab.
+    /// <c>footprint</c>, the tab an older client may still send, is read as <c>volume</c> and never stored, because the
+    /// footprint is Detail's main chart now (<see cref="DetailChart"/>).
     /// A PUT that omits the property leaves <see cref="IndicatorPaneSpecified"/> false so the stored tab is kept.
-    /// An explicit value, including <c>footprint</c>, replaces it.
+    /// An explicit value, including <c>volume</c>, replaces it.
     /// </summary>
-    [RegularExpression("^(footprint|cvd|rsi14|macd|atr14|tpo)$")]
+    [RegularExpression("^(volume|cvd|rsi14|macd|atr14|tpo)$")]
     public string IndicatorPane
     {
         get => _indicatorPane;
-        init => Set(nameof(IndicatorPane), ref _indicatorPane, value);
+        init => Set(nameof(IndicatorPane), ref _indicatorPane, value == RetiredFootprintPane ? VolumePane : value);
+    }
+
+    private string _detailChart = "footprint";
+
+    /// <summary>
+    /// Detail's main chart (REQUIREMENTS.md FR-9, FR-22): <c>footprint</c>, the default, or <c>price</c>,
+    /// the heatmap and candle chart. Any other value, including null, is refused. A PUT that omits the property keeps
+    /// the stored value; an explicit value, including <c>footprint</c>, replaces it. Order Flow does not read this.
+    /// </summary>
+    [RegularExpression("^(footprint|price)$")]
+    public string DetailChart
+    {
+        get => _detailChart;
+        init => Set(nameof(DetailChart), ref _detailChart, value);
     }
 
     /// <summary>
-    /// When true, the Detail indicator dock shows only its tab strip and the price chart takes the freed height
+    /// When true, the indicator dock shows only its tab strip and the chart above it takes the freed height
     /// (REQUIREMENTS.md FR-22, ARCHITECTURE.md D-39). Default false. An explicit null is refused. A PUT that omits the
-    /// property keeps the stored value; an explicit value, including false, replaces it. Order Flow does not read this.
+    /// property keeps the stored value; an explicit value, including false, replaces it. Detail and Order Flow both
+    /// read this, so the dock collapses on both tabs together.
     /// </summary>
     public bool IndicatorDockCollapsed
     {
@@ -266,7 +286,7 @@ public sealed record LayoutSettings
 
     /// <summary>
     /// Keeps <paramref name="stored"/>'s indicator tab when this write did not send one.
-    /// An explicit tab replaces the stored tab. An older client that omits the field must not reset it to footprint.
+    /// An explicit tab replaces the stored tab. An older client that omits the field must not reset it to volume.
     /// </summary>
     public LayoutSettings PreservingStoredIndicatorPane(LayoutSettings stored) => PreservingStoredOmissions(stored);
 
@@ -380,9 +400,14 @@ public sealed record LayoutSettings
             errors.Add("EventDotSize must be small, medium or large.");
         }
 
-        if (IndicatorPane is not ("footprint" or "cvd" or "rsi14" or "macd" or "atr14" or "tpo"))
+        if (IndicatorPane is not ("volume" or "cvd" or "rsi14" or "macd" or "atr14" or "tpo"))
         {
-            errors.Add("IndicatorPane must be footprint, cvd, rsi14, macd, atr14 or tpo.");
+            errors.Add("IndicatorPane must be volume, cvd, rsi14, macd, atr14 or tpo.");
+        }
+
+        if (DetailChart is not ("footprint" or "price"))
+        {
+            errors.Add("DetailChart must be footprint or price.");
         }
 
         if (SideSectionsCollapsed is null)

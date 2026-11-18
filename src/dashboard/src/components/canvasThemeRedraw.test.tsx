@@ -113,13 +113,14 @@ describe("canvas redraw on a theme change", () => {
     expect(grounds.slice(before)).toEqual([color("surface", "light")]);
   });
 
-  it("should repaint the Order Flow stage once in warm paper when the theme switches to Light", () => {
+  // — the dock's pane repaints too.
+  it("should repaint the Order Flow stage once in warm paper, and its dock's pane once, when the theme switches to Light", () => {
     render(<BookmapView market={market} layout={defaultLayout} viewWindow={defaultWindow(5)} onWindow={noop} onReading={noop} />);
     const before = grounds.length;
 
     act(() => canvasTheme.set("light"));
 
-    expect(grounds.slice(before)).toEqual([color("surface-lowest", "light")]);
+    expect([...grounds.slice(before)].sort()).toEqual([color("surface-lowest", "light"), color("surface", "light")].sort());
     expect(color("surface-lowest", "light")).toBe("#efede7");
   });
 });

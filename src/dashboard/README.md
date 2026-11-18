@@ -92,8 +92,8 @@ in `src/test/fixtures/`.
   that scrolls instead, and a wheel gesture that began by scrolling keeps scrolling until the wheel pauses for 250 ms.
   A page that cannot scroll (the wide layout) does not count, so there a cut-off plot zooms as before. Detail and Order Flow both ask `hooks/useWheelGate.ts` (over `lib/wheelGate.ts`) before they zoom; a
   new chart that zooms on the wheel asks it too (FR-67, FR-68, D-53, [a separate change]).
-  A chart plot is never taller than the window: `index.css` caps the Order Flow stage and the Detail price pane at
-  `100svh` and lets their minimums (420 px, 280 px on a phone, and 220 px) yield to it, so in a short window the chart
+  A chart plot is never taller than the window: `index.css` caps the Order Flow stage and the Detail main chart pane at
+  `100svh` and lets their minimums (~~420 px~~ 252 px since [a separate change], with the indicator dock's 168 px under it, 280 px on a phone, and 220 px) yield to it, so in a short window the chart
   shrinks and can always be scrolled wholly into view, where the wheel zooms it. A new chart that zooms on the wheel
   is capped the same way (D-53, [a separate change]).
 - Price controls: Detail and Order Flow show one Price group, `components/PriceControls.tsx` (+, −, Fit, Center and
@@ -101,6 +101,20 @@ in `src/test/fixtures/`.
   and what turns it off (a price zoom, Fit, a 4 px vertical drag, a 2 px vertical pinch) is decided there and in
   `domain/priceLock.ts`; a sideways drag and a time zoom leave it on. A chart that gets price controls renders that group
   and hands the hook its own shift and zoom (FR-67, FR-68, D-54, [a separate change]).
+- Detail's main chart: the footprint by default, or the price chart, from the *Main chart* group (Footprint, Price)
+  before the Price group; the choice is saved as `detailChart`. Both are drawn inside the one `components/MainChart.tsx`,
+  which draws `drawFootprint.ts` when its model carries a `footprint` layer and `drawMainChart.ts` otherwise, so the
+  drag, wheel and its gate, keys, the Price group and Lock are the same code on both. The footprint draws one row per
+  price tick on the price window, fitted to the footprint bars in view, and its delta row sits above the time axis.
+  The indicator dock's first tab is Volume (`drawVolumePane.ts`), whose warmup bars are marked by Order Flow's
+  `volumeStripBars` (FR-22, FR-41, FR-61, D-55, [a separate change]).
+- The indicator dock (`components/IndicatorDock.tsx`) sits under the Order Flow chart as well as under Detail's, in
+  place of Order Flow's old volume strip and CVD subchart. Both tabs show the tab `indicatorPane` names and collapse it
+  on `indicatorDockCollapsed`, so a choice on one shows on the other. On Order Flow the dock takes the stage's window,
+  so a drag, a zoom and the wheel gate move both, and its time-series tabs leave the PRICE, COB and SVP columns' width
+  at their right (`axisWidth`), so a time sits at the same x on the dock as on the plot. The CVD tab draws the warmup
+  stretch in the warmup grey and the live stretch in `up` or `down` by the sign of the session CVD, on both tabs, on a
+  scale fitted to the CVD in view with the zero guide only when zero is in range (D-48, FR-22, FR-45, FR-61, FR-67, D-56, [a separate change]).
 - Hints: `components/Hint.tsx` explains a control that is not obvious from its label, in one sentence (D-47). It shows
   on hover and on keyboard focus, and on touch through an ⓘ button beside the control. The control references it
   with `aria-describedby`; Escape, blur and the pointer leaving hide it. It never uses a native `title`. To hint a
@@ -113,7 +127,7 @@ in `src/test/fixtures/`.
 
 The page has three tabs, in the top bar's order Overview, Detail and Order Flow. **Order Flow** (`?tab=orderflow`;
 `?tab=bookmap` still opens it) charts the selected product on one price scale with the book and profile docked
-beside it ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) D-36). **Detail** (the default) is the picker and one product's charts, as described below.
+beside it ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) D-36), and the indicator dock below it (D-56). **Detail** (the default) is the picker and one product's charts, as described below.
 **Overview** is one table of every product from the polled `GET /api/instruments` list, headed "All products" with the
 shown and total counts and a chip with a count for each feed status present (LIVE, REPLAY and so on). Its filter row
 holds the filter field, "Group by sector" (once a column is sorted) and, in the native shell, Change server. Each row
@@ -144,7 +158,7 @@ regime kinds later. Detail shows the selected product's two regimes in the statu
 The product list is not fixed in the dashboard: it comes from `GET /api/instruments` (seeded by the route loader,
 then re-read every 2 s while the page is visible, paused while it is hidden). On Detail the status bar, the chart
 toolbar and the product picker sit above the chart workspace, which fills the rest of the viewport; the loading placeholder occupies
-that same chart row until a snapshot arrives. The workspace is the chart column (price chart and indicator dock, D-39) beside a side column about 300 px wide
+that same chart row until a snapshot arrives. The workspace is the chart column (main chart and indicator dock, D-39, D-55) beside a side column about 300 px wide
 (D-45): the depth ladder, the liquidity metrics, the signals, the levels and the Layers toggles, stacked and always visible,
 with the volume profile added when a profile window is on. It is a `flex-wrap` row, so under 900 px the column drops
 below the charts; above that it scrolls inside itself. The button at the right of the indicator dock's tab strip (*Indicator dock*,
@@ -174,7 +188,9 @@ Home returns to the live edge. Escape clears the cell and leaves the chart. Afte
 a bar that is still in view. The hint is shown only while the chart has keyboard focus. Wheel, drag and
 double-click are unchanged, and moving the pointer does not speak: the polite live region follows the keyboard
 cell only. That readout is Chicago time, OHLC, volume, and the bid, ask and coverage at the focused price. A
-forming bar is not announced again until the numbers have settled.
+forming bar is not announced again until the numbers have settled. On the footprint main chart a cell is one footprint
+column, whatever the candle interval, and the readout is that column's volume and delta and the volume traded at the bid
+and at the ask at the focused price, the cell's own two numbers, never the resting depth (D-55, [a separate change]).
 
 ## Measuring
 
@@ -188,7 +204,7 @@ and latency of `GET /api/instruments`. It is opt-in. It is not a CI gate.
 
 ## Layout settings
 
-The selected product, the interval, the history window, the watchlist and the pane and signal toggles are saved to
+The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`) and the pane and signal toggles are saved to
 `PUT /api/layouts/me` and, on every change, to this browser's localStorage. The API keeps one revision counter per
 viewer in memory for the process. A PUT is accepted only when its `revision` is that counter; the response carries
 the next value. A mismatch answers 409 with the layout still stored. When that document was saved, the page shows

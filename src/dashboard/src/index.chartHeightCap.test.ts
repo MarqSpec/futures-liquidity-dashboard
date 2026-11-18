@@ -61,7 +61,8 @@ function restingHeights(bodies: readonly (string | undefined)[], height: number)
 }
 
 const charts = [
-  ["the Order Flow stage", [rules.get(".bookmap-stage")], 420],
+  // 420; the indicator dock's 168 px minimum now sits under it.
+  ["the Order Flow stage", [rules.get(".bookmap-stage")], 252],
   ["the Order Flow stage on a phone", [rules.get(".bookmap-stage"), phone.get(".bookmap-stage")], 280],
   ["the Detail price pane", [rules.get(".pane-main")], 220],
 ] as const;
@@ -98,7 +99,7 @@ describe("chart height cap and the wheel gate", () => {
     document.body.replaceChildren();
   });
 
-  // The narrow layout scrolls #root, as tall as the window. Strips off, the plot is as tall as the chart's box.
+  // The narrow layout scrolls #root, as tall as the window. The plot is as tall as the chart's box (no strips).
   it.each([
     ["the Order Flow plot", 380, [rules.get(".bookmap-stage")]],
     ["the Detail plot", 200, [rules.get(".pane-main")]],

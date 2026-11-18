@@ -3,15 +3,16 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CENTER_FOLLOW_MS, LOCK_RELEASE_DRAG_PX, PINCH_AXIS_MIN_PX } from "../domain/bookmap.ts";
 import { chartZoomIn, chartZoomOut } from "../domain/chartCursor.ts";
-import { defaultLayout, type LayoutSettings } from "../domain/layout.ts";
+import { defaultLayout, type DetailChartId, type LayoutSettings } from "../domain/layout.ts";
 import { fromSnapshot, type MarketState } from "../domain/merge.ts";
 import { defaultWindow, type ViewWindow } from "../domain/viewWindow.ts";
 import { createCrosshairStore, type CrosshairStore } from "../hooks/crosshair.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
+import { FOOTPRINT_DELTA_STRIP } from "./drawFootprint.ts";
 import { TIME_AXIS_HEIGHT } from "./drawMainChart.ts";
 import { MarketView } from "./MarketView.tsx";
 
@@ -21,7 +22,9 @@ vi.mock("../hooks/useElementSize.ts", () => ({ useElementSize: () => ({ width: 8
 const base = fromSnapshot(snapshotFixture(), 5, 0);
 const fitted = defaultWindow(base.historyMinutes);
 const plotX = 400;
-const plotMidY = (600 - TIME_AXIS_HEIGHT) / 2;
+// Set per chart below: the footprint keeps its delta row between the plot and the time axis.
+let plotMidY = (600 - TIME_AXIS_HEIGHT) / 2;
+let chart: DetailChartId = "price";
 const lockTitle = "Keep the last price in the middle. A vertical drag or a price zoom, including + and −, turns this off. A sideways drag does not.";
 
 beforeAll(() => {
@@ -100,7 +103,7 @@ let seenWindow: ViewWindow = defaultWindow(5);
 let seenLayout: LayoutSettings = defaultLayout;
 
 function Host({ shown, locked = false, start = fitted }: { readonly shown: MarketState; readonly locked?: boolean; readonly start?: ViewWindow }) {
-  const [layout, setLayout] = useState<LayoutSettings>({ ...defaultLayout, centerPrice: locked });
+  const [layout, setLayout] = useState<LayoutSettings>({ ...defaultLayout, detailChart: chart, centerPrice: locked });
   const [view, setView] = useState<ViewWindow>(start);
   useEffect(() => {
     seenWindow = view;
@@ -137,7 +140,13 @@ function lowerPrint(crosshair: CrosshairStore): number {
   return price;
 }
 
-describe("MarketView price controls", () => {
+// — the footprint main chart takes the same controls.
+describe.each(["price", "footprint"] as const)("MarketView price controls on the %s chart", (shown) => {
+  beforeEach(() => {
+    chart = shown;
+    plotMidY = (600 - TIME_AXIS_HEIGHT - (shown === "footprint" ? FOOTPRINT_DELTA_STRIP : 0)) / 2;
+  });
+
   it("should show +, −, Fit, Center and Lock beside the price chart with the Order Flow names and tooltip", () => {
     render(<Host shown={withPrint(100)} />);
     const group = screen.getByRole("group", { name: "Price" });

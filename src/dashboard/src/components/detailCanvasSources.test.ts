@@ -8,6 +8,7 @@ import drawFootprint from "./drawFootprint.ts?raw";
 import drawMainChart from "./drawMainChart.ts?raw";
 import drawProfile from "./drawProfile.ts?raw";
 import drawSeriesPane from "./drawSeriesPane.ts?raw";
+import drawVolumePane from "./drawVolumePane.ts?raw";
 import indicatorDock from "./IndicatorDock.tsx?raw";
 import mainChart from "./MainChart.tsx?raw";
 import profilePanel from "./ProfilePanel.tsx?raw";
@@ -32,6 +33,7 @@ const sources: Readonly<Record<string, string>> = {
   "components/drawMainChart.ts": drawMainChart,
   "components/drawProfile.ts": drawProfile,
   "components/drawSeriesPane.ts": drawSeriesPane,
+  "components/drawVolumePane.ts": drawVolumePane,
   "components/MainChart.tsx": mainChart,
   "components/ProfilePanel.tsx": profilePanel,
   "components/TimePane.tsx": timePane,

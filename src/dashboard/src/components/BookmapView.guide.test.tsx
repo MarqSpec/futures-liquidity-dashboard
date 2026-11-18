@@ -17,9 +17,12 @@ vi.mock("./drawBookmap.ts", () => ({
   drawBookmapHover: () => undefined,
 }));
 
-vi.mock("../lib/canvas.ts", () => ({
-  prepareSurface: () => ({ ctx: {}, width: 800, height: 600 }),
-}));
+// The indicator dock under the stage draws for real, so its panes get a recording context.
+vi.mock("../lib/canvas.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/canvas.ts")>();
+  const { fakeSurface } = await import("../test/fakeCanvas.ts");
+  return { ...actual, prepareSurface: () => fakeSurface(800, 600).surface };
+});
 
 vi.mock("../hooks/useElementSize.ts", () => ({ useElementSize: () => ({ width: 800, height: 600 }) }));
 

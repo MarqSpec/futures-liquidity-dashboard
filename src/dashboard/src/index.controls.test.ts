@@ -229,6 +229,13 @@ describe("index.css button groups", () => {
     ]).toEqual([true, true, true, true, true, true, true]);
   });
 
+  it("should set Detail's Main chart group apart from the Price group and wrap them on a narrow screen", () => {
+    expect([
+      has(".chart-price-controls", "gap: var(--space-4) var(--space-12)"),
+      has(".chart-price-controls", "flex-wrap: wrap"),
+    ]).toEqual([true, true]);
+  });
+
   it("should lift the chosen button over its neighbours so its border is not covered when it is pressed", () => {
     expect(has('.segmented button[aria-pressed="true"]', "z-index: 1")).toBe(true);
   });

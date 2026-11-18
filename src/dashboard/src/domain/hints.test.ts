@@ -7,7 +7,8 @@ describe("hints", () => {
   it("should hold one non-empty sentence per hinted control", () => {
     const entries = Object.entries(hints);
 
-    expect(entries.length).toBeGreaterThanOrEqual(18);
+    // 16 since a separate change took the volume strip and CVD subchart toggles out of Display.
+    expect(entries.length).toBeGreaterThanOrEqual(16);
     for (const [name, text] of entries) {
       expect(text.trim(), name).not.toBe("");
       expect(text.endsWith("."), name).toBe(true);

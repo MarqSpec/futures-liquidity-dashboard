@@ -128,7 +128,7 @@ describe("BookmapView event dots", () => {
       liquidity: { ...base.liquidity, bestBid: null, bestAsk: null },
       orderFlow: { ...base.orderFlow, keyLevels: [], signals: [event(1, signalTime, 104)], footprints: [], developingFootprint: null },
     };
-    const frame = bookmapFrame(800, 400, { volume: true, cvd: true });
+    const frame = bookmapFrame(800, 400);
     const range = fitRange([500, 100]);
     if (!range) throw new Error("the candle has no price range");
     const span = 5 * 60_000;
