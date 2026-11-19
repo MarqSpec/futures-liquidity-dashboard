@@ -11,6 +11,7 @@ How to configure, run, build, deploy and roll back the Live Futures Liquidity Da
 | dashboard | [`src/dashboard/Dockerfile`](src/dashboard/Dockerfile) | 8080 | nginx serving the built single-page app and proxying `/api`, `/health`, `/hubs` (WebSocket upgrade included) and `/metrics` to `API_UPSTREAM`, so the browser stays on one origin and the API needs no CORS policy |
 | `unit-tests` (compose profile `test`) | the `test` stage of [`Dockerfile`](Dockerfile) | — | Runs the unit tests while the stage builds; local only |
 | TopstepX gateway | external | — | Market data, only with `Feed:Provider=ProjectX`; outbound only ([`INTERFACES.md`](INTERFACES.md) A) |
+| Claude Messages API | external | — | Position feedback, only with `Feedback:Provider=Claude` enabled and a key; outbound HTTPS, one call per request a viewer makes, carrying derived metrics and the key ([`INTERFACES.md`](INTERFACES.md) E). Off in production until enabled; the Mock provider in Development makes no call |
 
 No database, cache or identity provider runs (D-16, D-18). The phone app is the dashboard image, installed as a
 PWA (§14).
@@ -23,9 +24,9 @@ PWA (§14).
 | **No order capability is configured or reachable** (FR-6, T-1) | `ReadOnlyGuardTests` fails, or a route or hub method outside [`INTERFACES.md`](INTERFACES.md) appears |
 | **A restart or reconnect never labels an old book current** (FR-4, FR-11) | The status says LIVE while `bookKnown` is false; it must say RECOVERING until the settle-window snapshot |
 | **A simulated or replayed market never says LIVE** (D-14) | `Feed:Provider` decides the label; nothing else can |
-| **Credentials stay on the server** (NFR-6) | ProjectX keys in an image, a log, `.env.example`, the browser bundle or a `VITE_*` variable |
-| **Production has no anonymous grants** (D-16, T-4) | `/api/*` answers without `X-Api-Key`. `appsettings.json` ships no anonymous grants; only Development grants all four |
-| **Only `/health/live` is anonymous outside Development** (D-30) | `/health/ready` or `/metrics` answers 200 without a key, unless `Auth__ProtectDiagnostics=false` |
+| **Credentials stay on the server** (NFR-6) | ProjectX keys, or the Claude API key (`Feedback__ApiKey` / `ANTHROPIC_API_KEY`), in an image, a log, `.env.example`, the browser bundle or a `VITE_*` variable |
+| **Production has no anonymous grants** (D-16, T-4) | `/api/*` answers without `X-Api-Key`. `appsettings.json` ships no anonymous grants; only Development grants all five |
+| **Only `/health/live` is anonymous outside Development** (D-30) | `/health/ready`, `/metrics` or `/api/diagnostics/depth-width` answers 200 without a key, unless `Auth__ProtectDiagnostics=false` |
 | **Live depth only for an instrument that has been verified** (D-1) | `Feed:Provider=ProjectX` in a shared environment before that: unverified data labelled LIVE |
 | **Local ports on 127.0.0.1 unless `API_BIND_ADDRESS` is set** | `API_BIND_ADDRESS=0.0.0.0` publishes the API, and Development's anonymous grants, on the LAN (T-9) |
 
@@ -59,7 +60,7 @@ only as hashes.
 | `Feed__ProjectX__ContractIds__<ROOT>` | no | empty: search | Pin the gateway contract id for a root |
 | `Feed__ProjectX__SearchLive` | no | `false` | The `live` flag of contract search and history |
 | `Feed__ProjectX__SnapshotSettleMs` | no | `1500` (200–10,000) | How long depth rows are collected after a (re)subscribe before the first snapshot (unverified) |
-| `Feed__ProjectX__LevelsPerSide` | no | `10` (5–50) | Levels per side in that snapshot |
+| `Feed__ProjectX__LevelsPerSide` | no | `50` (5–200) | Levels per side kept from the gateway book. A shorter book is not padded. compose passes a shell or `.env` value through; unset stays 50 |
 | `Feed__ProjectX__MaxContracts` | no | `0` (no limit) | Most products the ProjectX feed streams (FR-54) |
 | `Feed__ProjectX__Quotes` | no | `true` | Subscribe to quotes for every product, for the top of book of products without depth |
 | `Feed__ProjectX__HistoryMinIntervalMs` | no | `650` | Least gap between two history requests, across products |
@@ -79,22 +80,30 @@ only as hashes.
 | `Engine__Instruments__0` … | no | `*` | `*` for every product the feed offers, or a list of roots (FR-10, FR-54) |
 | `Engine__ExcludeInstruments__0` … | no | none | Roots left out |
 | `Engine__Regime__*` | no | timeframes `300`, `900`; ADX 14, efficiency 20, EMA 13/48; thresholds 25, 0.30, 20, 0.20 | The regime (FR-56, D-27) |
-| `Engine__SliceMs`, `__RetentionMinutes`, `__HistoryRetentionMinutes`, `__StaleAfterMs`, `__LadderLevels` | no | `1000`, `60`, `4320`, `3000`, `20` | Slice length, one-second retention, minute retention (3 days), the STALE threshold (D-14), ladder depth |
+| `Engine__SliceMs`, `__RetentionMinutes`, `__HistoryRetentionMinutes`, `__StaleAfterMs`, `__LadderLevels` | no | `1000`, `60`, `4320`, `3000`, `40` (5–200) | Slice length, one-second retention, minute retention (3 days), the STALE threshold (D-14), ladder depth. A book with fewer prices is sent as it arrived |
 | `Engine__OrderFlow__*` | no | [`REQUIREMENTS.md`](REQUIREMENTS.md) FR-41–FR-52 | Every order-flow threshold and the `Enable*` switch of each detector; `SignalHistoryCap` (20,000, clamped 1–100,000, D-41) |
 | `Api__PublishMs` | no | `250` | Delta period (NFR-1) |
 | `Api__PublishTimeoutMs` | no | `1000` | How long one browser may take a delta before its connection is aborted (D-32) |
 | `Api__MaxWatchlist` | no | `12` | Most starred products per viewer (FR-55) |
 | `Auth__Keys__0__Name`, `__KeySha256`, `__Grants__0` … | outside Development | none | API keys: a name, the key's SHA-256 as 64 hex characters, and `permission:scope` grants (D-16). Outside Development the process refuses to start without at least one. The dashboard viewer needs `view-dashboard` and `configure-layout` |
-| `Auth__AnonymousGrants__0` … | no | none; all four in Development | Grants for a request with no key. Startup fails if any are set outside Development |
-| `Auth__ProtectDiagnostics` | no | unset: protected outside Development | `true` requires a key for `/health/ready` and `/metrics` even in Development; `false` leaves them anonymous everywhere. `/health/live` is always anonymous |
+| `Auth__AnonymousGrants__0` … | no | none; all five in Development | Grants for a request with no key. Startup fails if any are set outside Development |
+| `Auth__ProtectDiagnostics` | no | unset: protected outside Development | `true` requires a key for `/health/ready`, `/metrics` and `/api/diagnostics/depth-width` even in Development; `false` leaves them anonymous everywhere. `/health/live` is always anonymous |
 | `Agent__Enabled`, `__IntervalSeconds`, `__FirstRunSeconds` | no | `true`, `60`, `15` | The reference agent (D-17) |
+| `Feedback__Enabled` | no | `false`; `true` in Development | Position feedback (FR-74, D-61). False hides it: both feedback routes say it is unavailable, and the POST answers 503 `disabled` |
+| `Feedback__Provider` | no | `Claude`; `Mock` in Development, and so in compose | `Claude` calls the Messages API with the key below; `Mock` writes deterministic feedback from the metrics, needs no key and costs nothing |
+| `ANTHROPIC_API_KEY`, or `Feedback__ApiKey` | for `Claude` | none | **Secret.** The Claude API key; `Feedback__ApiKey` wins when both are set. Set it only as a service secret or in your shell, never in a file. With `Claude` enabled and no key, startup still succeeds and the POST answers 503 `no-key`. It is sent only to the Messages API and never logged, returned or put in an error (NFR-6, T-10) |
+| `Feedback__Model`, `Feedback__Effort` | no | `claude-opus-5-5`, `medium` | The model must be one the code prices (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`), so its spend can be counted; effort is `low`, `medium`, `high`, `xhigh` or `max`. Validated at start |
+| `Feedback__MaxTokens`, `Feedback__TimeoutSeconds`, `Feedback__MaxRetries` | no | `8000` (1,024–64,000), `60` (5–300), `2` (0–5) | Output cap with thinking included; the whole call's deadline; the SDK's retries of a 408, 409, 429 or 5xx inside it |
+| `Feedback__MonthlyBudgetUsd` | no | `100` (0 or more) | The month's Claude spend cap (NFR-9). At or over it the POST answers 429 until the next UTC month. **Counted in memory: a restart resets it to zero**, so it is a guard, not a bill |
+| `Feedback__RequestsPerMinute` | no | `6` (1–60) | Requests one viewer may start in a sliding minute; one more is a 429 `rate-limited`. A viewer may also have only one request in flight |
+| `Feedback__ServerFallback`, `Feedback__BaseUrl` | no | `true`, `https://api.anthropic.com` | Opt in to the API's server-side fallback on a refusal; the Messages API origin, HTTPS only |
 | `API_UPSTREAM` | no | `http://futuresliquiditydashboard.api:8080` | dashboard container only: the origin nginx proxies to |
 | `VITE_API_BASE_URL` | no | empty (same origin) | dashboard build time. Public, inlined into the bundle; leave it empty so the image uses the nginx proxy |
 | `FEED_PROVIDER`, `API_BIND_ADDRESS` | no | `Synthetic`, `127.0.0.1` | compose only: the feed, and the host address the API is published on (§2) |
 
 **To make an API key**, generate a random value, give it to the caller, and store only its hash:
 `printf '%s' '<your-key>' | sha256sum`. Scopes are an instrument root or `*`; the permissions are `view-dashboard`,
-`configure-layout`, `read-context` and `publish-overlay` ([`REQUIREMENTS.md`](REQUIREMENTS.md) §2). Copy
+`configure-layout`, `read-context`, `publish-overlay` and `request-feedback` ([`REQUIREMENTS.md`](REQUIREMENTS.md) §2). A viewer who asks for position feedback needs `request-feedback` as well as `view-dashboard` on that instrument (FR-74). Copy
 [`.env.example`](.env.example) to `.env` for the names compose reads; never commit real values.
 
 ## 4. First run
@@ -164,7 +173,7 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
 |---|---|---|
 | Startup fails: "Feed:Provider is ProjectX but no ProjectX credentials were found" | `appsettings.json` defaults to `ProjectX` outside Development | Set the credentials, or `Feed__Provider=Synthetic` |
 | Every `/api` call answers 401 outside Development | No anonymous grants and no keys yet | Add `Auth__Keys__*` (§3) and type the raw key into the page (D-30) |
-| `/health/ready` or `/metrics` answers 401 | Outside Development those routes need a key (D-30) | Send `X-Api-Key`, or set `Auth__ProtectDiagnostics=false` when the scraper cannot |
+| `/health/ready`, `/metrics` or `/api/diagnostics/depth-width` answers 401 | Outside Development those routes need a key (D-30) | Send `X-Api-Key`, or set `Auth__ProtectDiagnostics=false` when the scraper cannot |
 | `/health/ready` is Unhealthy for a while after start | Warmup has not finished or the stream has not started | Wait |
 | `/health/ready` stays Unhealthy and the log says the credentials or configuration were refused | The login was refused (D-37) | Fix the credentials, then restart |
 | RECOVERING after a ProjectX reconnect | A new epoch: the book is unknown until the settle-window snapshot | None, unless it persists |
@@ -173,6 +182,9 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
 | A layout comes back only after the browser reloads | The server forgets it; the browser re-sends its valid copy (D-18) | Reload the dashboard in that browser |
 | The top bar shows "Market open" on a holiday | Holidays and early closes are not modelled (D-5) | Expected |
 | A replay without `Loop` turns STALE when the file ends | The feed ends and the last state stays | Set `Feed__Replay__Loop=true` for a demo |
+| The feedback spend reads $0 after a restart, or the budget 429 cleared | The monthly count is in memory (FR-74, D-61) | Expected. Check the month's real spend in the Anthropic console |
+| `GET /api/plans/feedback/status` says `available: false` | `disabled` (`Feedback__Enabled` is false, the production default), `no-key` (Claude with no key) or `budget-exhausted` | Enable it and set the key as a secret, or wait for the next UTC month |
+| Feedback comes back `feedback: null` with a `reason` | The model refused, timed out, was rate limited or failed, or its reply failed the schema; the metrics still come back (FR-74) | Read the one `Feedback call` log line for that request: it names the exception's type and the HTTP status the API answered with, never its message. `HTTP 401` is the key and `HTTP 400` the request the API refused |
 
 ## 8. Production
 
@@ -180,6 +192,10 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
   service secrets and `Engine__Instruments` listing only verified instruments. Licensing first (NFR-7).
 - **Access.** `ASPNETCORE_ENVIRONMENT=Production` (the image default), no anonymous grants, one hashed key per viewer
   and per agent with the least grants it needs. The health check path is `/health/live`.
+- **Position feedback** stays off (`Feedback__Enabled=false`, the shipped default) until you turn it on: then set
+  `ANTHROPIC_API_KEY` as a service secret on the API service, keep `Feedback__Provider=Claude`, and give
+  `request-feedback` only to the keys that should spend it. The cap is `Feedback__MonthlyBudgetUsd` ($100), counted
+  in memory, so a redeploy resets it (FR-74, D-61).
 - **One instance** per market-data account (§2). No horizontal scaling: state is in memory and the session single.
 - **Pinned.** The SDK (`global.json`), every NuGet version (`Directory.Packages.props`), the pnpm lockfile, the base
   images by tag, and the release by its digest (§11).

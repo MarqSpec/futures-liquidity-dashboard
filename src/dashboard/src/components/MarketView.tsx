@@ -17,9 +17,12 @@ import {
 } from "../domain/layout.ts";
 import { indicatorsForViewer, type MarketState } from "../domain/merge.ts";
 import { lastPriceAnchor } from "../domain/priceLock.ts";
+import { rangeZonesFor } from "../domain/rangeZones.ts";
 import { fitRange, zoomRange } from "../domain/scale.ts";
 import { clampWindow, LIVE_EDGE_PAD, panOffsetMs, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
 import type { CrosshairStore } from "../hooks/crosshair.ts";
+import { useFeedback } from "../hooks/useFeedback.ts";
+import { usePosition } from "../hooks/usePosition.ts";
 import { usePriceControls } from "../hooks/usePriceControls.ts";
 import { DomLadder } from "./DomLadder.tsx";
 import { IndicatorDock } from "./IndicatorDock.tsx";
@@ -27,6 +30,9 @@ import { LayersPanel } from "./LayersPanel.tsx";
 import { LiquidityPanel } from "./LiquidityPanel.tsx";
 import { MainChart } from "./MainChart.tsx";
 import { OverlayPanel } from "./OverlayPanel.tsx";
+import { FeedbackPanel } from "./FeedbackPanel.tsx";
+import { PositionLines } from "./PositionLines.tsx";
+import { PositionTicket } from "./PositionTicket.tsx";
 import { PriceControls } from "./PriceControls.tsx";
 import { ProfilePanel } from "./ProfilePanel.tsx";
 import type { SideFold } from "./SidePanel.tsx";
@@ -113,7 +119,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     fitRange([market.status.coveredLow, market.status.coveredHigh]) ?? { low: 0, high: 100 };
   const fittedSpan = Math.max(1, fitted.high - fitted.low);
   const zoomed = zoomRange(fitted.low, fitted.high, view.priceZoom);
-  const range = shiftPriceRange(zoomed, clampPriceShift(shiftTicks, zoomed.high - zoomed.low));
+  const range = shiftPriceRange(zoomed, shiftTicks, fittedSpan);
   const anchorTicks = lastPriceAnchor(market.prints, candles);
   useLayoutEffect(() => {
     historyRef.current = historyMs;
@@ -176,7 +182,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
   };
   const panPrice = (deltaTicks: number) => {
     const span = Math.max(1, fittedSpanRef.current * windowRef.current.priceZoom);
-    const ticks = clampPriceShift(priceShiftRef.current + deltaTicks, span);
+    const ticks = clampPriceShift(priceShiftRef.current + deltaTicks, span, fittedSpanRef.current);
     priceShiftRef.current = ticks;
     setPriceShift({ root: rootRef.current, ticks });
   };
@@ -194,6 +200,11 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     ? `${spec.name} ${market.status.provenance.toLowerCase()} footprint chart, ${lastPriceText}, ${flow.footprints.length} closed one-minute footprint bars`
     : `${spec.name} ${market.status.provenance.toLowerCase()} chart, ${lastPriceText}, ${candles.length} ${layout.chartMinutes}-minute candles`;
   const chooseChart = (chart: "footprint" | "price") => onReading?.((current) => withDetailChart(current, chart));
+  // — the root's simulated position, the same one Order Flow shows (FR-72, D-58)
+  const positionEditor = usePosition({ root: market.root, contractId: spec.contractId, positions: layout.positions, onReading, market });
+  // — feedback on that position, beside the chart (FR-74)
+  const feedback = useFeedback({ root: market.root, position: positionEditor.position, lastTicks: market.prints.at(-1)?.priceTicks ?? null, spec, apply: positionEditor.apply });
+  const visibleSpan = range.high - range.low;
 
   return (
     <div className="workspace">
@@ -215,6 +226,22 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
           </fieldset>
           <PriceControls locked={layout.centerPrice} canCenter={anchorTicks != null} actions={priceActions} />
         </div>
+        <PositionTicket
+          root={market.root}
+          position={positionEditor.position}
+          spec={spec}
+          lastTicks={anchorTicks}
+          tracking={positionEditor.tracking}
+          notice={positionEditor.notice}
+          onApply={positionEditor.apply}
+          onClear={positionEditor.clear}
+          onPlace={() => {
+            if (anchorTicks !== null) positionEditor.place(anchorTicks, anchorTicks, visibleSpan);
+          }}
+          feedback={{ offered: feedback.offered, busy: feedback.busy, onRequest: feedback.request }}
+        />
+        <div className={feedback.panel ? "feedback-beside feedback-beside--open" : "feedback-beside"}>
+        <div className="feedback-main">
         <MainChart
           model={{
             market: chartMarket,
@@ -244,6 +271,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
             overlay: paneOn("overlay"),
             signals: chartSignals,
             isKindOn: kindOn,
+            rangeZones: rangeZonesFor(market.rangeZones, layout),
             footprint: footprintChart
               ? {
                   bars: flow.footprints,
@@ -264,6 +292,18 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
           onReset={priceActions.fit}
           priceLocked={layout.centerPrice}
           onReleaseLock={priceActions.releaseLock}
+          onAltPlace={onReading ? (priceTicks, spanTicks) => positionEditor.place(priceTicks, anchorTicks, spanTicks) : undefined}
+          renderOverlay={(frame) => (
+            <PositionLines
+              position={positionEditor.position}
+              spec={spec}
+              frame={frame}
+              notice={positionEditor.notice}
+              onApply={positionEditor.apply}
+              ghosts={feedback.ghosts}
+              onApplyGhost={feedback.applyGhost}
+            />
+          )}
         />
         <IndicatorDock
           market={market}
@@ -276,6 +316,9 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
           showSinglePrints={kindOn("SinglePrints")}
           onReading={onReading}
         />
+        </div>
+        {feedback.panel && <FeedbackPanel state={feedback.panel} spec={spec} ghosts={feedback.ghosts} onApply={feedback.applyGhost} onClose={feedback.close} />}
+        </div>
       </div>
       <aside className="side-column" aria-label="Depth, liquidity and signals">
         {paneOn("ladder") && <DomLadder market={market} isKindOn={kindOn} fold={fold("ladder")} />}

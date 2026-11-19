@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Text.Json;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
@@ -5,9 +7,11 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Market;
 using MarqSpec.FuturesLiquidityDashboard.Core.Sessions;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Hosting;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Replay;
+using MarqSpec.FuturesLiquidityDashboard.Ingestion.Feeds;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.Ingestion;
 
@@ -162,6 +166,80 @@ public sealed class ReplayAndHostingTests
         var inverted = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Engine:Regime:RangeAdx"] = "40" }).Build();
         var act = () => IngestionServiceCollectionExtensions.ReadEngineOptions(inverted);
         act.Should().Throw<InvalidOperationException>().WithMessage("*RangeAdx*");
+    }
+
+    [Theory]
+    [InlineData(4, false)]
+    [InlineData(5, true)]
+    [InlineData(50, true)]
+    [InlineData(200, true)]
+    [InlineData(201, false)]
+    public void ProjectXFeedOptions_ShouldAcceptLevelsPerSide_OnlyFromFiveToTwoHundred(int levels, bool accepted)
+    {
+        var options = new ProjectXFeedOptions { LevelsPerSide = levels };
+        var results = new List<ValidationResult>();
+
+        var valid = Validator.TryValidateObject(options, new ValidationContext(options), results, validateAllProperties: true);
+
+        valid.Should().Be(accepted);
+        if (!accepted)
+        {
+            results.Should().Contain(r => r.MemberNames.Contains(nameof(ProjectXFeedOptions.LevelsPerSide)));
+        }
+    }
+
+    [Fact]
+    public void AddMarketData_ShouldRejectProjectXLevelsPerSide_WhenItIsAboveTwoHundred()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Feed:Provider"] = "Synthetic",
+            ["Feed:ProjectX:LevelsPerSide"] = "201",
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddMarketData(config);
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IOptions<FeedOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("*Feed:ProjectX:LevelsPerSide*5*200*");
+    }
+
+    [Fact]
+    public void ReadEngineOptions_ShouldDefaultLadderLevelsToForty_WhenUnset()
+    {
+        var config = new ConfigurationBuilder().Build();
+
+        IngestionServiceCollectionExtensions.ReadEngineOptions(config).LadderLevels.Should().Be(40);
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(40)]
+    [InlineData(200)]
+    public void ReadEngineOptions_ShouldAcceptLadderLevels_WhenInsideFiveToTwoHundred(int levels)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Engine:LadderLevels"] = levels.ToString(CultureInfo.InvariantCulture),
+        }).Build();
+
+        IngestionServiceCollectionExtensions.ReadEngineOptions(config).LadderLevels.Should().Be(levels);
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(201)]
+    public void ReadEngineOptions_ShouldRejectLadderLevels_WhenOutsideFiveToTwoHundred(int levels)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Engine:LadderLevels"] = levels.ToString(CultureInfo.InvariantCulture),
+        }).Build();
+
+        var act = () => IngestionServiceCollectionExtensions.ReadEngineOptions(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Engine:LadderLevels*5*200*");
     }
 
     [Fact]

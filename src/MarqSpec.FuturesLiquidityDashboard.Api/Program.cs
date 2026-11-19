@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using MarqSpec.FuturesLiquidityDashboard.Api.Agent;
 using MarqSpec.FuturesLiquidityDashboard.Api.Auth;
 using MarqSpec.FuturesLiquidityDashboard.Api.Endpoints;
+using MarqSpec.FuturesLiquidityDashboard.Api.Feedback;
 using MarqSpec.FuturesLiquidityDashboard.Api.Health;
 using MarqSpec.FuturesLiquidityDashboard.Api.Hubs;
 using MarqSpec.FuturesLiquidityDashboard.Api.Layouts;
@@ -12,6 +13,7 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
 using MarqSpec.FuturesLiquidityDashboard.Core.Overlays;
 using MarqSpec.FuturesLiquidityDashboard.Api.ProjectX;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Hosting;
+using MarqSpec.FuturesLiquidityDashboard.Ingestion.ProjectX;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -45,6 +47,9 @@ builder.Services.AddSingleton<WatchTracker>();
 builder.Services.AddSingleton<DashboardMetrics>();
 builder.Services.AddHostedService<MarketPublisher>();
 builder.Services.AddHostedService<ReferenceOverlayAgent>();
+
+// Position feedback on request: Claude in the API, or the deterministic mock in Development (ARCHITECTURE.md D-61).
+builder.Services.AddPositionFeedback(builder.Configuration);
 
 // Viewer and agent access (ARCHITECTURE.md D-16).
 builder.Services.AddOptions<AuthOptions>()
@@ -89,6 +94,8 @@ var app = builder.Build();
 // Create the gauges with the app, so /metrics has them from the first scrape.
 _ = app.Services.GetRequiredService<DashboardMetrics>();
 _ = app.Services.GetRequiredService<IngestMetrics>();
+_ = app.Services.GetRequiredService<DepthWidthDiagnostic>();
+_ = app.Services.GetRequiredService<FeedbackMetrics>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -116,11 +123,14 @@ if (protectDiagnostics)
 }
 
 app.MapDashboardApi();
+app.MapPlanFeedback();
 app.MapHub<MarketHub>(MarketHub.Path);
 var metrics = app.MapPrometheusScrapingEndpoint();
+var depthWidth = app.MapDepthWidth();
 if (protectDiagnostics)
 {
     metrics.RequireAuthorization();
+    depthWidth.RequireAuthorization();
 }
 
 // An unmatched path still has to challenge. Otherwise a lookalike such as /hubsx?access_token=... is only a 404

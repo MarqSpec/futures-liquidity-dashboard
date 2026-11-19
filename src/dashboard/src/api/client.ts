@@ -35,7 +35,12 @@ export class LayoutConflictError extends Error {
 /** Extra control for one call. `reportUnauthorized` is false for the access probe, which handles 401 itself. */
 export interface CallOptions {
   readonly reportUnauthorized?: boolean;
+  /** A longer deadline for a call that waits on a model; the default is 8 s. */
+  readonly timeoutMs?: number;
 }
+
+/** Turns a failed response into a typed error of the caller's own, or null to fall through to the generic failure. */
+export type FailureReader = (response: Response) => Promise<Error | null>;
 
 const TIMEOUT_MS = 8000;
 const READ_RETRIES = 2;
@@ -73,15 +78,17 @@ function headersFor(init: RequestInit): Record<string, string> {
   return headers;
 }
 
-async function once<T>(
+export async function once<T>(
   path: string,
   schema: z.ZodType<T>,
   init: RequestInit,
   signal?: AbortSignal,
   options?: CallOptions,
   conflict?: z.ZodType<ServerLayout>,
+  readFailure?: FailureReader,
 ): Promise<T> {
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  const timeoutMs = options?.timeoutMs ?? TIMEOUT_MS;
+  const timeout = AbortSignal.timeout(timeoutMs);
   let response: Response;
   try {
     response = await performHttp({
@@ -90,7 +97,7 @@ async function once<T>(
       headers: headersFor(init),
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       callerSignal: signal,
-      timeoutMs: TIMEOUT_MS,
+      timeoutMs,
       native: isNativeShell(),
     });
   } catch (error) {
@@ -112,6 +119,10 @@ async function once<T>(
     if (response.status === 401 && options?.reportUnauthorized !== false) {
       reportUnauthorized();
     }
+    const typed = readFailure ? await readFailure(response) : null;
+    if (typed) {
+      throw typed;
+    }
     throw new ApiError(failureFor(response.status), `The API answered ${response.status}.`);
   }
   const parsed = schema.safeParse(await response.json().catch(() => undefined));
@@ -122,7 +133,7 @@ async function once<T>(
 }
 
 /** An idempotent read, retried with backoff on a network failure or a 5xx. A 401 is not retried. */
-async function read<T>(path: string, schema: z.ZodType<T>, signal?: AbortSignal, options?: CallOptions): Promise<T> {
+export async function read<T>(path: string, schema: z.ZodType<T>, signal?: AbortSignal, options?: CallOptions): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await once(path, schema, { method: "GET" }, signal, options);
@@ -159,9 +170,12 @@ export async function viewerKeyRejected(signal?: AbortSignal): Promise<boolean> 
   }
 }
 
+/** A layout to save. `positions` is left out unless the viewer changed them: the API then keeps the stored ones (REQUIREMENTS.md FR-72). */
+export type LayoutPut = Omit<LayoutSettings, "positions"> & Partial<Pick<LayoutSettings, "positions">>;
+
 /** PUT /api/layouts/me: saves the layout when `revision` is the one the server holds. A mismatch throws {@link LayoutConflictError}. Never retried automatically. */
 export function putLayout(
-  document: { readonly revision: number; readonly layout: LayoutSettings },
+  document: { readonly revision: number; readonly layout: LayoutPut },
   signal?: AbortSignal,
 ): Promise<ServerLayout> {
   return once(

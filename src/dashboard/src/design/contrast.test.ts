@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { BOOKMAP_STAGE, WARMUP_BAND_ALPHA } from "../components/drawBookmap.ts";
 import { CELL_TEXT_TOKENS, FOOTPRINT_GROUND, splitCellAlpha } from "../components/drawFootprint.ts";
-import { composite, contrastRatio, deltaE, mostReadable } from "./color.ts";
-import { GRAPHIC, GRAPHIC_MINIMUM, SURFACES, TEXT, TEXT_MINIMUM } from "./contrastFloors.ts";
+import { cieLab, composite, contrastRatio, deltaE, mostReadable } from "./color.ts";
+import { GRAPHIC, GRAPHIC_MINIMUM, RANGE_ZONE_FILL_ALPHA, SURFACES, TEXT, TEXT_MINIMUM } from "./contrastFloors.ts";
 import { THEMES, type ThemeId, type TokenFile, parseTokenFile, resolveColor } from "./tokenFile.ts";
 import { tokens } from "./tokens.ts";
 
@@ -197,6 +197,59 @@ describe("volume dot outlines", () => {
     );
 
     expect(BESIDE_DOTS).toHaveLength(15);
+    expect(close).toEqual([]);
+  });
+});
+
+// A range zone is a neutral box (REQUIREMENTS.md FR-75): a hairline edge that marks the range's bounds, a line held to 3:1, and
+// a faint fill every price mark is drawn over, so the fill must leave each text and line token at its floor.
+const RANGE_ZONE = "range-zone";
+/** The grounds a zone is filled over: the Order Flow stage, the footprint's ground and the heatmap's empty cell. */
+const ZONE_GROUNDS = [BOOKMAP_STAGE, FOOTPRINT_GROUND, "heat-0"] as const;
+/** Colours that mean a direction or a side; a zone must not read as any of them. */
+const DIRECTIONAL = ["up", "down", "bias-bullish", "bias-bearish", "bid", "ask", "aggressor-buy", "aggressor-sell"] as const;
+const NEUTRAL_DISTANCE = 15;
+const NEUTRAL_CHROMA = 15;
+
+describe("range zones", () => {
+  it("should hold the zone's edge to 3:1 on every surface in both themes when it is in the graphic list", () => {
+    expect(GRAPHIC as readonly string[]).toContain(RANGE_ZONE);
+    expect(shortfalls([RANGE_ZONE], GRAPHIC_MINIMUM)).toEqual([]);
+  });
+
+  it("should leave every text token at 4.5:1 and every line at 3:1 on the zone fill in both themes", () => {
+    const floors = [
+      ...TEXT.map((name) => ({ name, minimum: TEXT_MINIMUM })),
+      ...GRAPHIC.filter((name) => name !== RANGE_ZONE).map((name) => ({ name, minimum: GRAPHIC_MINIMUM })),
+    ];
+    const failing = THEMES.flatMap((theme) => {
+      const zone = resolveColor(tokens, RANGE_ZONE, theme);
+      const fills = ZONE_GROUNDS.map((ground) => [ground, composite(zone, RANGE_ZONE_FILL_ALPHA, resolveColor(tokens, ground, theme))] as const);
+      // Not under Order Flow's warmup band: stacked on it the two tints left marks under their floors (up 4.27:1 in
+      // Terminal), so there a zone draws its edges alone (drawRangeZones.test.ts, drawBookmap range zones).
+      return fills.flatMap(([ground, fill]) =>
+        floors
+          .map(({ name, minimum }) => ({ name, minimum, value: contrastRatio(resolveColor(tokens, name, theme), fill) }))
+          .filter(({ value, minimum }) => value < minimum)
+          .map(({ name, value }) => `${theme} ${name}/zone on ${ground} ${value.toFixed(2)}:1`),
+      );
+    });
+
+    expect(RANGE_ZONE_FILL_ALPHA).toBeGreaterThan(0);
+    expect(failing).toEqual([]);
+  });
+
+  it("should be a neutral tint far from every direction and side colour in both themes", () => {
+    const close = THEMES.flatMap((theme) => {
+      const zone = resolveColor(tokens, RANGE_ZONE, theme);
+      const [, a = 0, b = 0] = cieLab(zone);
+      const chroma = Math.hypot(a, b) > NEUTRAL_CHROMA ? [`${theme} chroma ${Math.hypot(a, b).toFixed(1)}`] : [];
+      const near = DIRECTIONAL.map((other) => ({ other, value: deltaE(zone, resolveColor(tokens, other, theme)) }))
+        .filter(({ value }) => value < NEUTRAL_DISTANCE)
+        .map(({ other, value }) => `${theme} ${RANGE_ZONE}/${other} ΔE ${value.toFixed(1)}`);
+      return [...chroma, ...near];
+    });
+
     expect(close).toEqual([]);
   });
 });

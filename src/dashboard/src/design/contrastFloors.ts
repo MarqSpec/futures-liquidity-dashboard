@@ -74,6 +74,8 @@ export const GRAPHIC = [
   // A volume dot's edge by aggressor side, green buying and red selling, on every tab.
   "dot-outline-buy",
   "dot-outline-sell",
+  // A range zone's hairline edge marks the range's bounds, so it is a line too.
+  "range-zone",
 ] as const;
 
 export const TEXT_MINIMUM = 4.5;
@@ -88,3 +90,9 @@ export const BOOKMAP_STAGE = "surface-lowest";
  * Was 0.28, which left `warmup` itself at 2.99:1 and 2.95:1 on it.
  */
 export const WARMUP_BAND_ALPHA = 0.25;
+
+/**
+ * A range zone's box is `range-zone` at this alpha over the plot ground (REQUIREMENTS.md FR-75). Every price mark is drawn over
+ * it, so contrast.test.ts holds every text and line token to its floor on that fill.
+ */
+export const RANGE_ZONE_FILL_ALPHA = 0.12;

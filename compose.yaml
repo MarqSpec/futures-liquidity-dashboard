@@ -28,6 +28,9 @@ services:
       PROJECTX_USERNAME: ${PROJECTX_USERNAME:-}
       PROJECTX_API_KEY: ${PROJECTX_API_KEY:-}
       PROJECTX_API_SECRET: ${PROJECTX_API_SECRET:-}
+      # Optional overrides (DEPLOYMENT.md). Unset keeps LevelsPerSide 50 and LadderLevels 40.
+      Feed__ProjectX__LevelsPerSide: ${Feed__ProjectX__LevelsPerSide:-50}
+      Engine__LadderLevels: ${Engine__LadderLevels:-40}
 
   dashboard:
     image: futures-liquidity-dashboard-dashboard:dev

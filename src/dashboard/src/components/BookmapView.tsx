@@ -6,6 +6,7 @@ import { chartZoomIn, chartZoomOut } from "../domain/chartCursor.ts";
 import { formatLocalTime, formatQty, formatTicks } from "../domain/format.ts";
 import { aggregateHeat } from "../domain/heat.ts";
 import { isSignalOn, withRipsPreset, type LayoutSettings } from "../domain/layout.ts";
+import { rangeZonesFor } from "../domain/rangeZones.ts";
 import { dragReleasesLock, lastPriceAnchor, pinchZoomsPrice } from "../domain/priceLock.ts";
 import { fitRange, zoomRange } from "../domain/scale.ts";
 import { hints } from "../domain/hints.ts";
@@ -50,13 +51,19 @@ import { createCrosshairStore, type CrosshairStore } from "../hooks/crosshair.ts
 import { useCanvasFontEpoch } from "../hooks/useCanvasFontEpoch.ts";
 import { useCanvasPalette } from "../hooks/useCanvasTheme.ts";
 import { useElementSize } from "../hooks/useElementSize.ts";
+import { useFeedback } from "../hooks/useFeedback.ts";
+import { usePosition } from "../hooks/usePosition.ts";
 import { usePriceControls } from "../hooks/usePriceControls.ts";
 import { useWheelGate } from "../hooks/useWheelGate.ts";
 import { prepareSurface } from "../lib/canvas.ts";
 import { drawBookmap, drawBookmapHover, type BookmapHeatScale } from "./drawBookmap.ts";
 import { Hint } from "./Hint.tsx";
 import { IndicatorDock } from "./IndicatorDock.tsx";
+import { FeedbackPanel } from "./FeedbackPanel.tsx";
+import { PositionLines, type PositionFrame } from "./PositionLines.tsx";
+import { PositionTicket } from "./PositionTicket.tsx";
 import { PriceControls } from "./PriceControls.tsx";
+import { RangeZoneControls } from "./RangeZoneControls.tsx";
 
 /** Props of the Bookmap tab. It reads the live market and the saved layout, and it places no order. */
 export interface BookmapViewProps {
@@ -345,7 +352,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
   }, [baseReading, viewWindow, market.historyMinutes, market.serverTimeMs, market.prints, market.historyWatermarkMs, market.orderFlow, market.profiles, layout, reclaims, sessionProfile, svp]);
 
   // Dragging only moves the price window. Aggregations above stay put for the life of the drag (REQUIREMENTS.md NFR-2).
-  const range = useMemo(() => shiftPriceRange(sceneBase.zoomed, shiftTicks), [sceneBase, shiftTicks]);
+  const range = useMemo(() => shiftPriceRange(sceneBase.zoomed, shiftTicks, sceneBase.fittedSpan), [sceneBase, shiftTicks]);
   const scene = useMemo(() => ({ ...sceneBase, range }), [sceneBase, range]);
   useLayoutEffect(() => {
     sceneRef.current = scene;
@@ -355,6 +362,29 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
     offsetRef.current = viewWindow.offsetMs;
     historyRef.current = market.historyMinutes * 60_000;
   });
+
+  // — the root's simulated position, the same one Detail shows (FR-72, D-58)
+  const positionEditor = usePosition({ root: market.root, contractId: market.instrument.contractId, positions: layout.positions, onReading, market });
+  // — feedback on that position, beside the chart (FR-74)
+  const feedback = useFeedback({
+    root: market.root,
+    position: positionEditor.position,
+    lastTicks: market.prints.at(-1)?.priceTicks ?? null,
+    spec: market.instrument,
+    apply: positionEditor.apply,
+  });
+  const positionFrame: PositionFrame | null =
+    width >= 8 && height >= 8
+      ? {
+          left: scene.frame.plot.x,
+          right: scene.frame.plot.x + scene.frame.plot.w,
+          top: scene.frame.plot.y,
+          bottom: scene.frame.plot.y + scene.frame.plot.h,
+          axisWidth: scene.frame.price.w,
+          lowTicks: scene.range.low,
+          highTicks: scene.range.high,
+        }
+      : null;
 
   // +, −, Fit, Center and Lock, shared with Detail.
   const priceActions = usePriceControls({
@@ -443,6 +473,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
       spec: market.instrument,
       lastPriceTicks: lastPrint?.priceTicks ?? scene.candles.at(-1)?.c ?? null,
       hover: null,
+      rangeZones: rangeZonesFor(market.rangeZones, layout),
     });
     setHeatScale((current) => (sameHeatScale(current, painted) ? current : painted));
   }, [scene, layout, market, width, height, showBbo, showPnc, fontEpoch, palette]);
@@ -628,6 +659,12 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
     const point = plotPoint(event);
     // COB and SVP are not the price plot, so a press there does not pan.
     if (!point) return;
+    // — Alt-click places the entry and never starts a pan (D-58)
+    if (event.altKey) {
+      event.preventDefault();
+      positionEditor.place(Math.round(point.priceTicks), scene.anchorTicks, scene.range.high - scene.range.low);
+      return;
+    }
     setHover(point);
     const span = scene.range.high - scene.range.low;
     dragRef.current = {
@@ -635,7 +672,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
       pointer: event.pointerId,
       x: event.clientX,
       y: event.clientY,
-      ticks: clampPriceShift(shiftTicks, span),
+      ticks: clampPriceShift(shiftTicks, span, scene.fittedSpan),
       offsetMs: offsetRef.current,
       spanMs: Math.max(1, scene.endMs - scene.startMs),
     };
@@ -722,7 +759,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
       }
       if (!priceActions.isLockHeld()) {
         const span = scene.range.high - scene.range.low;
-        const ticks = clampPriceShift(pan.ticks + dragShiftTicks(event.clientY - pan.y, scene.range, scene.frame.plot.h), span);
+        const ticks = clampPriceShift(pan.ticks + dragShiftTicks(event.clientY - pan.y, scene.range, scene.frame.plot.h), span, scene.fittedSpan);
         shiftRef.current = ticks;
         setShiftTicks(ticks);
       }
@@ -890,6 +927,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
                 )}
               </Hint>
             </div>
+            <RangeZoneControls layout={layout} onReading={onReading} variant="display" />
           </div>
           )}
         </div>
@@ -907,10 +945,26 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
           {bookNote}
         </p>
       )}
+      <PositionTicket
+        root={market.root}
+        position={positionEditor.position}
+        spec={market.instrument}
+        lastTicks={scene.anchorTicks}
+        tracking={positionEditor.tracking}
+        notice={positionEditor.notice}
+        onApply={positionEditor.apply}
+        onClear={positionEditor.clear}
+        onPlace={() => {
+          if (scene.anchorTicks !== null) positionEditor.place(scene.anchorTicks, scene.anchorTicks, scene.range.high - scene.range.low);
+        }}
+        feedback={{ offered: feedback.offered, busy: feedback.busy, onRequest: feedback.request }}
+      />
+      <div className={feedback.panel ? "feedback-beside feedback-beside--open" : "feedback-beside"}>
+      <div className="feedback-main">
       <div
         className={dragging ? "bookmap-stage bookmap-stage--dragging" : "bookmap-stage"}
         ref={stageRef}
-        title="Shift+wheel zooms price and scrolling the plot zooms time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to stretch it. Drag the plot to move time and price. Center puts the last price in the middle. Lock keeps it there. Double-click fits."
+        title="Shift+wheel zooms price and scrolling the plot zooms time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to stretch it. Drag the plot to move time and price. Center puts the last price in the middle. Lock keeps it there. Double-click fits. Alt-click places a simulated entry; drag its lines to move them."
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
@@ -927,9 +981,18 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
       >
         <canvas ref={canvasRef} aria-hidden="true" />
         <canvas ref={overlayRef} aria-hidden="true" />
+        <PositionLines
+          position={positionEditor.position}
+          spec={market.instrument}
+          frame={positionFrame}
+          notice={positionEditor.notice}
+          onApply={positionEditor.apply}
+          ghosts={feedback.ghosts}
+          onApplyGhost={feedback.applyGhost}
+        />
         {showHint && (
           <p className="bookmap-hint">
-            Scroll the plot to zoom time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to zoom price. Drag the plot to move. Center recenters price. Lock holds the last price in the middle.
+            Scroll the plot to zoom time; while the page can scroll and the plot is cut off, the wheel scrolls the page first. Drag the PRICE scale to zoom price. Drag the plot to move. Center recenters price. Lock holds the last price in the middle. Alt-click places a simulated entry.
             <button type="button" onClick={dismissHint}>
               Dismiss
             </button>
@@ -968,6 +1031,9 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
         onReading={onReading}
         axisWidth={width >= 8 ? width - scene.frame.plot.w : undefined}
       />
+      </div>
+      {feedback.panel && <FeedbackPanel state={feedback.panel} spec={market.instrument} ghosts={feedback.ghosts} onApply={feedback.applyGhost} onClose={feedback.close} />}
+      </div>
       <dl className="bookmap-readout" aria-label="Order Flow readout">
         <div>
           <dt>Time</dt>

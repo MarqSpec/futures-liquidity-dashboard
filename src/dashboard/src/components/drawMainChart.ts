@@ -1,4 +1,4 @@
-import type { Footprint, HeatColumn, LevelTouch, Profile, Signal } from "../api/schemas.ts";
+import type { Footprint, HeatColumn, LevelTouch, Profile, RangeZone, Signal } from "../api/schemas.ts";
 import { withAlpha } from "../design/color.ts";
 import type { Candle } from "../domain/candles.ts";
 import { formatAge, formatChicagoTime, formatLocalMinute, formatLocalTime, formatPercent, formatQty, formatTickRange, formatTicks } from "../domain/format.ts";
@@ -11,6 +11,7 @@ import { linearScale, niceTicks, timeTicks, type LinearScale } from "../domain/s
 import { biasColors, kindName } from "../domain/signals.ts";
 import { hatchPattern, labelBox, type Surface } from "../lib/canvas.ts";
 import { AXIS_WIDTH, canvasColors, colors, emaColors, fonts, MONO, PROFILE_GUTTER, themed } from "../theme.ts";
+import { drawRangeZones } from "./drawRangeZones.ts";
 import { strokeVolumeDotOutline } from "./volumeDotOutline.ts";
 
 /** Height of the time axis under the main chart. */
@@ -50,6 +51,8 @@ export interface MainChartModel {
   readonly isKindOn: (kind: string) => boolean;
   /** Set when Detail's main chart is the footprint (REQUIREMENTS.md FR-22): drawn instead of the price chart, on the same window. */
   readonly footprint?: FootprintLayer | null;
+  /** Range zones to shade behind the price marks (REQUIREMENTS.md FR-75). They never change the price fit. */
+  readonly rangeZones?: readonly RangeZone[];
 }
 
 /** The footprint bars Detail's main chart draws when it shows the footprint. */
@@ -953,6 +956,8 @@ export function drawMainChart(surface: Surface, m: MainChartModel): MainChartGeo
     drawHeatmap(ctx, m, time, price, plotRight, h);
   }
   ctx.restore();
+  // Over the heatmap: its ground is opaque, so a zone under it would never show.
+  drawRangeZones(ctx, m.rangeZones ?? [], time, price, { x: gutter, y: 0, w: plotRight - gutter, h });
   drawGrid(ctx, m, time, price, plotRight, h);
   ctx.save();
   ctx.beginPath();

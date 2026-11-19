@@ -475,6 +475,193 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
         timeframes.Should().BeEquivalentTo([60, 300, 900]);
     }
 
+    [Fact]
+    public async Task Layout_RoundTripsPositions_DropsAStaleContract_RefusesAWrongSideStop_AndKeepsThemWhenOmitted()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        using var context = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/snapshot/MES?historyMinutes=1", UriKind.Relative)));
+        var active = context.RootElement.GetProperty("instrument").GetProperty("contractId").GetString()!;
+        using var mgcContext = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/snapshot/MGC?historyMinutes=1", UriKind.Relative)));
+        var mgcActive = mgcContext.RootElement.GetProperty("instrument").GetProperty("contractId").GetString()!;
+        var revision = await LayoutRevision(client);
+        var longPosition = new
+        {
+            side = "long",
+            entryType = "limit",
+            entryTicks = 20000,
+            quantity = 3,
+            stopTicks = 19990,
+            targets = new[] { new { priceTicks = 20010, quantity = 1 }, new { priceTicks = 20020, quantity = 2 } },
+            contractId = active,
+            createdMs = 1760000000000L,
+        };
+        var shortPosition = new
+        {
+            side = "short",
+            entryType = "limit",
+            entryTicks = 5000,
+            quantity = 2,
+            stopTicks = 5010,
+            targets = new[] { new { priceTicks = 4990, quantity = 2 } },
+            contractId = mgcActive,
+            createdMs = 1760000000001L,
+        };
+        var write = new { revision, layout = new { instrument = "MGC", positions = new Dictionary<string, object> { ["MES"] = longPosition, ["MGC"] = shortPosition } } };
+        using var put = await client.PutAsJsonAsync(new Uri("/api/layouts/me", UriKind.Relative), write, Json);
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var read = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative)));
+        var positions = read.RootElement.GetProperty("layout").GetProperty("positions");
+        var mes = positions.GetProperty("MES");
+        mes.GetProperty("side").GetString().Should().Be("long");
+        mes.GetProperty("entryType").GetString().Should().Be("limit");
+        mes.GetProperty("entryTicks").GetDecimal().Should().Be(20000);
+        mes.GetProperty("quantity").GetInt32().Should().Be(3);
+        mes.GetProperty("stopTicks").GetDecimal().Should().Be(19990);
+        mes.GetProperty("targets").EnumerateArray().Select(t => t.GetProperty("priceTicks").GetDecimal()).Should().Equal(20010m, 20020m);
+        mes.GetProperty("contractId").GetString().Should().Be(active);
+        mes.GetProperty("createdMs").GetInt64().Should().Be(1760000000000L);
+        mes.GetProperty("state").GetString().Should().Be("planned");
+        var mgc = positions.GetProperty("MGC");
+        mgc.GetProperty("side").GetString().Should().Be("short");
+        mgc.GetProperty("stopTicks").GetDecimal().Should().Be(5010);
+
+        // Omitting positions keeps the stored ones.
+        var omitted = "{\"revision\":" + (revision + 1) + ",\"layout\":{\"instrument\":\"MGC\",\"historyMinutes\":45}}";
+        using var omittedBody = new StringContent(omitted, Encoding.UTF8, "application/json");
+        using var kept = await client.PutAsync(new Uri("/api/layouts/me", UriKind.Relative), omittedBody);
+        kept.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var keptDoc = JsonDocument.Parse(await kept.Content.ReadAsStringAsync());
+        keptDoc.RootElement.GetProperty("layout").GetProperty("positions").GetProperty("MES").GetProperty("quantity").GetInt32().Should().Be(3);
+
+        // A position for a contract that is not the active one is absent from the PUT body and from the GET.
+        var stale = new { longPosition.side, longPosition.entryType, longPosition.entryTicks, longPosition.quantity, longPosition.stopTicks, longPosition.targets, contractId = "NOTACTIVE", longPosition.createdMs };
+        var staleWrite = new { revision = revision + 2, layout = new { instrument = "MGC", positions = new Dictionary<string, object> { ["MES"] = stale } } };
+        using var stalePut = await client.PutAsJsonAsync(new Uri("/api/layouts/me", UriKind.Relative), staleWrite, Json);
+        stalePut.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var staleBody = JsonDocument.Parse(await stalePut.Content.ReadAsStringAsync());
+        staleBody.RootElement.GetProperty("layout").GetProperty("positions").EnumerateObject().Should().BeEmpty();
+        using var staleRead = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative)));
+        staleRead.RootElement.GetProperty("layout").GetProperty("positions").EnumerateObject().Should().BeEmpty();
+
+        // A stop on the wrong side is a 400 that names the field.
+        var wrong = new { longPosition.side, longPosition.entryType, longPosition.entryTicks, longPosition.quantity, stopTicks = 20001, longPosition.targets, longPosition.contractId, longPosition.createdMs };
+        var wrongWrite = new { revision = revision + 3, layout = new { instrument = "MGC", positions = new Dictionary<string, object> { ["MES"] = wrong } } };
+        using var refused = await client.PutAsJsonAsync(new Uri("/api/layouts/me", UriKind.Relative), wrongWrite, Json);
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("Positions[MES].StopTicks");
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldReturnTheVersionedMetricsOfEachLeg_WhenThePlanIsValid()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        var plan = await ValidPlan(client);
+
+        using var response = await client.PostAsJsonAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), plan, Json);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var metrics = doc.RootElement;
+        metrics.GetProperty("definitionsVersion").GetInt32().Should().Be(1);
+        metrics.GetProperty("instrument").GetString().Should().Be("MES");
+        metrics.GetProperty("legs").EnumerateArray().Select(l => l.GetProperty("leg").GetString()).Should().Equal("entry", "stop", "target");
+        metrics.GetProperty("rewardRisk")[0].GetProperty("ratio").GetDouble().Should().Be(2.0);
+        metrics.GetProperty("legs")[0].GetProperty("throughFrequency").EnumerateArray().Select(w => w.GetProperty("bars").GetInt32()).Should().Equal(60, 240);
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldRefuseWithA400NamingTheField_WhenTheStopIsOnTheWrongSide()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        var plan = await ValidPlan(client, stopTicks: 20_001);
+
+        using var response = await client.PostAsJsonAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), plan, Json);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Position.StopTicks");
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldRefuseWithA400NamingTheField_WhenThePlanIsForAnotherContract()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        var plan = await ValidPlan(client, contractId: "NOTACTIVE");
+
+        using var response = await client.PostAsJsonAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), plan, Json);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Position.ContractId");
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldRefuseWithA400NamingTheField_WhenATickPriceIsBeyondTheLongRange()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        var contractId = (await ActiveContract(client))!;
+        const string Body = """
+            {"side":"long","entryType":"limit","entryTicks":2e20,"quantity":1,"stopTicks":1e20,
+             "targets":[{"priceTicks":3e20,"quantity":1}],"contractId":"CONTRACT","createdMs":1760000000000}
+            """;
+        using var content = new StringContent(Body.Replace("CONTRACT", contractId, StringComparison.Ordinal), Encoding.UTF8, "application/json");
+
+        using var response = await client.PostAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Position.EntryTicks is out of range");
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldStoreNothing_WhenItComputesMetrics()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+        var before = await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative));
+
+        using var response = await client.PostAsJsonAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), await ValidPlan(client), Json);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative))).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task PlanMetrics_ShouldBeNotFound_WhenTheInstrumentIsUnknown()
+    {
+        using var client = factory.CreateClient();
+        await DashboardFactory.WaitUntilReadyAsync(client);
+
+        using var response = await client.PostAsJsonAsync(new Uri("/api/plans/metrics/ZZZ", UriKind.Relative), await ValidPlan(client), Json);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private static async Task<string?> ActiveContract(HttpClient client)
+    {
+        using var snapshot = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/snapshot/MES?historyMinutes=1", UriKind.Relative)));
+        return snapshot.RootElement.GetProperty("instrument").GetProperty("contractId").GetString();
+    }
+
+    private static async Task<object> ValidPlan(HttpClient client, long stopTicks = 19_990, string? contractId = null)
+    {
+        var active = (await ActiveContract(client))!;
+        return new
+        {
+            side = "long",
+            entryType = "limit",
+            entryTicks = 20_000,
+            quantity = 2,
+            stopTicks,
+            targets = new[] { new { priceTicks = 20_020, quantity = 2 } },
+            contractId = contractId ?? active,
+            createdMs = 1_760_000_000_000L,
+        };
+    }
+
     private static async Task<long> LayoutRevision(HttpClient client)
     {
         using var doc = JsonDocument.Parse(await client.GetStringAsync(new Uri("/api/layouts/me", UriKind.Relative)));

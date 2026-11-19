@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using MarqSpec.Client.ProjectX.DependencyInjection;
 using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
@@ -30,7 +31,13 @@ public static partial class IngestionServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddOptions<FeedOptions>().Bind(configuration.GetSection(FeedOptions.Section)).ValidateDataAnnotations().ValidateOnStart();
+        services.AddOptions<FeedOptions>()
+            .Bind(configuration.GetSection(FeedOptions.Section))
+            .ValidateDataAnnotations()
+            .Validate(
+                static options => options.ProjectX.LevelsPerSide is >= ProjectXFeedOptions.MinLevelsPerSide and <= ProjectXFeedOptions.MaxLevelsPerSide,
+                $"Feed:ProjectX:LevelsPerSide must be from {ProjectXFeedOptions.MinLevelsPerSide} to {ProjectXFeedOptions.MaxLevelsPerSide}.")
+            .ValidateOnStart();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IngestMetrics>();
         services.TryAddSingleton(_ => new ExchangeCalendar());
@@ -47,6 +54,15 @@ public static partial class IngestionServiceCollectionExtensions
 
         services.AddSingleton(engineOptions);
         services.AddSingleton(selection);
+        services.AddSingleton(sp =>
+        {
+            var feedOptions = sp.GetRequiredService<IOptions<FeedOptions>>().Value;
+            return new DepthWidthDiagnostic(
+                sp.GetRequiredService<IMeterFactory>(),
+                sp.GetRequiredService<ILogger<DepthWidthDiagnostic>>(),
+                feedOptions.ProjectX.LevelsPerSide,
+                sp.GetRequiredService<EngineOptions>().LadderLevels);
+        });
         services.AddSingleton(sp => new EngineRegistry(selection.InitialSpecs(), engineOptions, sp.GetRequiredService<ExchangeCalendar>()));
         services.TryAddSingleton(sp => new DepthDemand(
             sp.GetRequiredService<IOptions<FeedOptions>>().Value.Depth,
@@ -165,11 +181,24 @@ public static partial class IngestionServiceCollectionExtensions
             RetentionMinutes = section.GetValue(nameof(EngineOptions.RetentionMinutes), defaults.RetentionMinutes),
             HistoryRetentionMinutes = section.GetValue(nameof(EngineOptions.HistoryRetentionMinutes), defaults.HistoryRetentionMinutes),
             StaleAfterMs = section.GetValue(nameof(EngineOptions.StaleAfterMs), defaults.StaleAfterMs),
-            LadderLevels = section.GetValue(nameof(EngineOptions.LadderLevels), defaults.LadderLevels),
+            LadderLevels = ReadLadderLevels(section, defaults.LadderLevels),
             PrintCapacity = Math.Max(1, section.GetValue(nameof(EngineOptions.PrintCapacity), defaults.PrintCapacity)),
             OrderFlow = orderFlow,
             Regime = regime,
         };
+    }
+
+    /// <summary><c>Engine:LadderLevels</c>. A value outside 5–200 fails startup rather than trimming or padding the ladder.</summary>
+    private static int ReadLadderLevels(IConfigurationSection section, int fallback)
+    {
+        var value = section.GetValue(nameof(EngineOptions.LadderLevels), fallback);
+        if (value < EngineOptions.MinLadderLevels || value > EngineOptions.MaxLadderLevels)
+        {
+            throw new InvalidOperationException(
+                $"Engine:LadderLevels must be from {EngineOptions.MinLadderLevels} to {EngineOptions.MaxLadderLevels}.");
+        }
+
+        return value;
     }
 
     /// <summary>

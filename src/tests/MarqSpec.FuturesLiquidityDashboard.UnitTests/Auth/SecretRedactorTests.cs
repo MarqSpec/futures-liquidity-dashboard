@@ -27,6 +27,17 @@ public sealed class SecretRedactorTests
     }
 
     [Fact]
+    public void Redact_ShouldRemoveAnAnthropicKey_WhenTheMessageContainsOne()
+    {
+        const string Anthropic = "sk-ant-api03-synthetic_KEY-0123456789";
+
+        SecretRedactor.Redact($"x-api-key: {Anthropic}").Should().Be("x-api-key: [redacted]");
+        SecretRedactor.Redact($"rejected {Anthropic}.").Should().Be("rejected [redacted].");
+        SecretRedactor.Redact("the sk-ant- prefix alone").Should().Be("the sk-ant- prefix alone");
+        SecretRedactor.Redact("task-ant-farm").Should().Be("task-ant-farm");
+    }
+
+    [Fact]
     public void Redact_ShouldRemoveABearerToken_WhenTheMessageContainsIt()
     {
         SecretRedactor.Redact($"Authorization: Bearer {Key}").Should().Be("Authorization: Bearer [redacted]");

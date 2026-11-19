@@ -1,4 +1,4 @@
-import type { HeatColumn } from "../api/schemas.ts";
+import type { HeatColumn, RangeZone } from "../api/schemas.ts";
 import type { Candle } from "../domain/candles.ts";
 import { withAlpha } from "../design/color.ts";
 import { BOOKMAP_STAGE, WARMUP_BAND_ALPHA } from "../design/contrastFloors.ts";
@@ -26,6 +26,7 @@ import { niceTicks, timeTicks } from "../domain/scale.ts";
 import { eventMarker } from "../domain/signals.ts";
 import { labelBox, type Surface } from "../lib/canvas.ts";
 import { colors, fonts, orderFlowFonts, themeColor, themed } from "../theme.ts";
+import { drawRangeZones } from "./drawRangeZones.ts";
 import { strokeVolumeDotOutline } from "./volumeDotOutline.ts";
 
 const HEAT_LEVELS = 8;
@@ -114,6 +115,8 @@ export interface BookmapDrawModel {
   readonly spec: TickSpec;
   readonly lastPriceTicks: number | null;
   readonly hover: { readonly timeMs: number; readonly priceTicks: number } | null;
+  /** Range zones shaded behind the heat (REQUIREMENTS.md FR-75). */
+  readonly rangeZones?: readonly RangeZone[];
 }
 
 /** The heat scale one frame painted with, for the legend: its low and high cutoffs, null when no heat is in view. */
@@ -130,6 +133,7 @@ export function drawBookmap(surface: Surface, model: BookmapDrawModel): BookmapH
   ctx.fillStyle = palette.stage;
   ctx.fillRect(0, 0, width, height);
   ctx.font = DATA_SM;
+  drawRangeZones(ctx, model.rangeZones ?? [], scales.time, scales.price, frame.plot, warmupEdgeX(model, scales));
   const heat = drawHeat(ctx, model, scales);
   drawWarmup(ctx, model, scales);
   if (model.showPriceLine) drawPriceLine(ctx, model, scales);
@@ -223,6 +227,12 @@ function drawHeat(
   // The cutoffs the ramp maps between, for the key: the percentile values with auto-contrast, zero and the largest
   // magnitude in view on the fixed scale and in flow. Contrast is shown beside them, never folded into them.
   return flow || !model.heatAutoContrast ? { low: 0, high: maxMetric } : { low: domain.low, high: domain.high };
+}
+
+/** Where the warmup band ends, so a zone is not filled under it (contrast.test.ts); none when no band is drawn. */
+function warmupEdgeX(model: BookmapDrawModel, scales: ReturnType<typeof bookmapScales>): number {
+  const mark = model.historyWatermarkMs;
+  return mark === null || mark <= model.startMs || mark >= model.endMs ? Number.NEGATIVE_INFINITY : scales.time.toPx(mark);
 }
 
 function drawWarmup(

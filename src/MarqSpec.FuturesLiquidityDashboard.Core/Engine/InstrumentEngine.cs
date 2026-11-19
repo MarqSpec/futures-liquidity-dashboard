@@ -8,6 +8,7 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Liquidity;
 using MarqSpec.FuturesLiquidityDashboard.Core.Market;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
 using MarqSpec.FuturesLiquidityDashboard.Core.Overlays;
+using MarqSpec.FuturesLiquidityDashboard.Core.Plans;
 using MarqSpec.FuturesLiquidityDashboard.Core.Profile;
 using MarqSpec.FuturesLiquidityDashboard.Core.Regime;
 using MarqSpec.FuturesLiquidityDashboard.Core.Sessions;
@@ -104,6 +105,7 @@ public sealed class InstrumentEngine
     private long _openMinuteStart = long.MinValue;
     private long _publishedIndicatorMs = long.MinValue;
     private long _publishedFootprintMs = long.MinValue;
+    private long _publishedRangeZoneVersion;
     private long _publishedSignalId;
     private readonly List<RegimeTracker> _regimes;
     private long _rejected;
@@ -111,6 +113,9 @@ public sealed class InstrumentEngine
     private long _resets;
     private readonly List<PrintDto> _prints = [];
     private readonly RipsLedger _rips = new();
+
+    /// <summary>Ask minus bid volume at each price this session; footprints are trimmed, this is not (REQUIREMENTS.md FR-73).</summary>
+    private readonly Dictionary<long, long> _sessionDelta = [];
     private long _printSequence;
     private long _publishedPrintSequence;
     private long _printsEpoch;
@@ -1106,6 +1111,7 @@ public sealed class InstrumentEngine
                 SessionHigh = _sessionHigh,
                 SessionLow = _sessionLow,
                 HistoryWatermarkMs = _historyWatermarkMs,
+                RangeZones = RangeZonesLocked(),
                 Prints = _prints.ToList(),
                 OrderFlow = OrderFlowLocked(
                     _orderFlow.ClosedFootprints.Where(f => f.StartMs >= fromMs).ToList(),
@@ -1190,6 +1196,9 @@ public sealed class InstrumentEngine
                 : _orderFlow.CvdSeries.Where(p => p.EndMs > footprints[0].StartMs).ToList();
             var latestIndicator = indicators.SelectMany(i => i.Points).Select(p => p.TimeMs).DefaultIfEmpty(long.MinValue).Max();
             _publishedIndicatorMs = Math.Max(_publishedIndicatorMs, latestIndicator);
+            var zoneVersion = RangeZoneVersionLocked();
+            var rangeZones = zoneVersion != _publishedRangeZoneVersion ? RangeZonesLocked() : null;
+            _publishedRangeZoneVersion = zoneVersion;
             _seq++;
             return new DashboardDelta
             {
@@ -1214,6 +1223,7 @@ public sealed class InstrumentEngine
                 SessionHigh = _sessionHigh,
                 SessionLow = _sessionLow,
                 Prints = prints,
+                RangeZones = rangeZones,
                 OrderFlow = OrderFlowLocked(footprints, cvd, signals),
             };
         }
@@ -1287,6 +1297,7 @@ public sealed class InstrumentEngine
 
             _publishedSignalId = _orderFlow.Signals.LastId;
             _publishedIndicatorMs = Math.Max(_publishedIndicatorMs, LatestIndicatorMs());
+            _publishedRangeZoneVersion = RangeZoneVersionLocked();
             if (_prints.Count > 0)
             {
                 _publishedPrintSequence = Math.Max(_publishedPrintSequence, _prints[^1].Sequence);
@@ -1363,6 +1374,123 @@ public sealed class InstrumentEngine
             };
         }
     }
+
+    /// <summary>
+    /// Everything the plan metrics read (REQUIREMENTS.md FR-73, ARCHITECTURE.md D-60), gathered in one consistent reading.
+    /// The book is listed price by price across the covered depth, unknown levels as null (REQUIREMENTS.md FR-11).
+    /// </summary>
+    public PlanMarket PlanMarket(Overlay? overlay)
+    {
+        lock (_gate)
+        {
+            var session = _sessionProfile.Snapshot();
+            var flowPartial = !_cvdKnown
+                || session.PartialSinceMs is not null
+                || session.MissingRanges.Count > 0
+                || session.ApproximateRanges.Count > 0;
+            var atr = _oneMinuteIndicators.Series(includeDeveloping: false)
+                .FirstOrDefault(s => s.Kind == IndicatorKind.Atr && s.Ready && s.Points.Count > 0);
+            double? atrTicks = atr is { } a && a.Points[^1].Values is [var value, ..] && double.IsFinite(value) ? value : null;
+            return new PlanMarket
+            {
+                Root = Spec.Root.ToString(),
+                ContractId = Spec.ContractId,
+                AsOfMs = _nowMs,
+                StatusCode = StatusLocked().Code,
+                LastTicks = _lastPrice,
+                AtrTicks = atrTicks,
+                Book = PlanBookLocked(),
+                SliceMs = _options.SliceMs,
+                RecentHeat = _heat.Where(c => c.StartMs >= _nowMs - PlanMetricsCalculator.RestingWindowMs - _options.SliceMs).ToList(),
+                Minutes = _closedMinutes
+                    .Select(m => new PlanMinute(m.StartMs, m.High, m.Low, BarIsMissing(m.StartMs, m.EndMs) && !BarIsApproximate(m.StartMs, m.EndMs)))
+                    .ToList(),
+                Walls = _walls.Detect(_nowMs, _book),
+                Icebergs = _orderFlow.Icebergs,
+                Signals = _orderFlow.Signals.InWindow(_nowMs - PlanMetricsCalculator.SignalWindowMs),
+                Zones = _orderFlow.Zones.ToList(),
+                UnfinishedAuctions = _orderFlow.UnfinishedAuctions.ToList(),
+                Levels = PlanLevelsLocked(session, overlay),
+                SessionDeltaByPrice = new Dictionary<long, long>(_sessionDelta),
+                Regimes = _regimes.Select(r => r.State()).ToList(),
+                Coverage = new PlanCoverage
+                {
+                    ProfilePartialSinceMs = session.PartialSinceMs,
+                    VwapPartial = _vwap.IsPartial,
+                    FlowPartial = flowPartial,
+                    MissingSinceMs = _missingSinceMs,
+                },
+            };
+        }
+    }
+
+    private PlanBook PlanBookLocked()
+    {
+        if (!_book.IsKnown)
+        {
+            return Plans.PlanBook.Unknown;
+        }
+
+        var cells = new List<PlanBookCell>();
+        if (_book.CoveredLow is { } low && _book.CoveredHigh is { } high)
+        {
+            for (var price = low; price <= high; price++)
+            {
+                cells.Add(new PlanBookCell(price, _book.QuantityAt(BookSide.Bid, price), _book.QuantityAt(BookSide.Ask, price)));
+            }
+        }
+
+        return new PlanBook(true, _book.BestBid, _book.BestAsk, _book.CoveredLow, _book.CoveredHigh, cells);
+    }
+
+    private List<PlanLevel> PlanLevelsLocked(ProfileSnapshot session, Overlay? overlay)
+    {
+        var levels = new List<PlanLevel>();
+        if (session.ValueArea is { } va)
+        {
+            levels.Add(new PlanLevel("profile", "POC", va.PocTicks));
+            levels.Add(new PlanLevel("profile", "VAH", va.HighTicks));
+            levels.Add(new PlanLevel("profile", "VAL", va.LowTicks));
+        }
+
+        foreach (var node in ProfileNodes.Find(session.Bins, _options.OrderFlow))
+        {
+            levels.Add(new PlanLevel("profile", node.IsHigh ? "HVN" : "LVN", node.PriceTicks));
+        }
+
+        if (_vwap.Value is { } v)
+        {
+            var bands = VwapBands.From(v);
+            levels.Add(new PlanLevel("vwap", "VWAP", Tick(bands.Vwap)));
+            levels.Add(new PlanLevel("vwap", "VWAP +1SD", Tick(bands.Plus1)));
+            levels.Add(new PlanLevel("vwap", "VWAP -1SD", Tick(bands.Minus1)));
+            levels.Add(new PlanLevel("vwap", "VWAP +2SD", Tick(bands.Plus2)));
+            levels.Add(new PlanLevel("vwap", "VWAP -2SD", Tick(bands.Minus2)));
+        }
+
+        foreach (var level in _orderFlow.KeyLevels())
+        {
+            if (level.Name is "prior session high" or "prior session low")
+            {
+                levels.Add(new PlanLevel("prior-session", level.Name, level.PriceTicks));
+            }
+        }
+
+        if (overlay is not null && overlay.Request.ExpiresAt.ToUnixTimeMilliseconds() > _nowMs)
+        {
+            foreach (var level in overlay.Request.Levels)
+            {
+                if (Spec.TryToTicks(level.Price, out var ticks))
+                {
+                    levels.Add(new PlanLevel("overlay", level.Label, ticks));
+                }
+            }
+        }
+
+        return levels;
+    }
+
+    private static long Tick(double priceTicks) => (long)Math.Round(priceTicks, MidpointRounding.AwayFromZero);
 
     public StatusDto Status()
     {
@@ -1441,6 +1569,10 @@ public sealed class InstrumentEngine
         Trim(_minuteHeat, c => c.StartMs, historyCutoff);
         Trim(_closedMinutes, b => b.StartMs, historyCutoff);
         PruneRepairedMinutes(historyCutoff);
+        foreach (var regime in _regimes)
+        {
+            regime.TrimRangeZones(historyCutoff);
+        }
         while (_recentTrades.Count > 0 && _recentTrades.Peek().TimeMs <= t - MinuteMs)
         {
             _recentTrades.Dequeue();
@@ -1487,6 +1619,7 @@ public sealed class InstrumentEngine
         _profile5d.Add(t, trade.PriceTicks, trade.Quantity);
         _orderFlow.OnTrade(t, trade.PriceTicks, trade.Quantity, buyer, displayed, live);
         _cumulativeDelta += signed;
+        _sessionDelta[trade.PriceTicks] = _sessionDelta.GetValueOrDefault(trade.PriceTicks) + signed;
         _sessionVolume += trade.Quantity;
         _sessionOpen ??= trade.PriceTicks;
         _lastTradeMs = t;
@@ -1527,6 +1660,10 @@ public sealed class InstrumentEngine
         Trim(_bars, b => b.StartMs, t - retention);
         Trim(_closedMinutes, b => b.StartMs, historyCutoff);
         PruneRepairedMinutes(historyCutoff);
+        foreach (var regime in _regimes)
+        {
+            regime.TrimRangeZones(historyCutoff);
+        }
     }
 
     private void StartSession(string sessionId, long openMs, long? partialSinceMs)
@@ -1541,6 +1678,7 @@ public sealed class InstrumentEngine
         _vwap.Reset(sessionId, partialSinceMs is not null);
         _sessionProfile.ResetSession(sessionId, partialSinceMs);
         _cumulativeDelta = 0;
+        _sessionDelta.Clear();
         _sessionVolume = 0;
         _sessionOpen = null;
         _sessionHigh = null;
@@ -2000,6 +2138,10 @@ public sealed class InstrumentEngine
 
         return items.GetRange(start, items.Count - start);
     }
+
+    private List<RangeZoneSetDto> RangeZonesLocked() => _regimes.Select(r => r.RangeZoneSet()).ToList();
+
+    private long RangeZoneVersionLocked() => _regimes.Sum(r => r.RangeZoneVersion);
 
     private static void Trim<T>(List<T> items, Func<T, long> key, long beforeMs)
     {

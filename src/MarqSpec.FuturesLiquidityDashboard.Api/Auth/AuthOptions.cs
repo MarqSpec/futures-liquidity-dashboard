@@ -20,7 +20,7 @@ public sealed class AuthOptions
     public List<string> AnonymousGrants { get; set; } = [];
 
     /// <summary>
-    /// When true, <c>/health/ready</c> and <c>/metrics</c> require an authenticated caller. When false, they stay
+    /// When true, <c>/health/ready</c>, <c>/metrics</c> and <c>/api/diagnostics/depth-width</c> require an authenticated caller. When false, they stay
     /// anonymous. When null, they require a caller outside Development and stay open in Development (D-30).
     /// The host reads this once at startup; a later change applies only after a restart.
     /// <c>/health/live</c> is always anonymous so a platform health check needs no key.
@@ -41,7 +41,7 @@ public sealed class ApiKeyEntry
     public List<string> Grants { get; set; } = [];
 }
 
-/// <summary>The four permissions of REQUIREMENTS.md §2. None of them places, changes or cancels an order (REQUIREMENTS.md FR-6).</summary>
+/// <summary>The five permissions of REQUIREMENTS.md §2. None of them places, changes or cancels an order (REQUIREMENTS.md FR-6).</summary>
 public static class Permissions
 {
     public const string ClaimType = "perm";
@@ -49,10 +49,11 @@ public static class Permissions
     public const string ConfigureLayout = "configure-layout";
     public const string PublishOverlay = "publish-overlay";
     public const string ReadContext = "read-context";
+    public const string RequestFeedback = "request-feedback";
 
     public static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        ViewDashboard, ConfigureLayout, PublishOverlay, ReadContext,
+        ViewDashboard, ConfigureLayout, PublishOverlay, ReadContext, RequestFeedback,
     };
 
     /// <summary>True when <paramref name="grant"/> is <c>permission:scope</c> with a known permission and scope.</summary>

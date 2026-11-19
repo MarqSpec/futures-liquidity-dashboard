@@ -12,7 +12,8 @@ import { fromSnapshot } from "../domain/merge.ts";
 import { createCrosshairStore } from "../hooks/crosshair.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { MainChart } from "./MainChart.tsx";
-import type { MainChartModel } from "./drawMainChart.ts";
+import { TIME_AXIS_HEIGHT, type MainChartModel } from "./drawMainChart.ts";
+import type { PositionFrame } from "./PositionLines.tsx";
 
 const market = fromSnapshot(snapshotFixture(), 5, 0);
 const candles: Candle[] = [
@@ -453,5 +454,82 @@ describe("MainChart wheel while the page scrolls", () => {
 
     expect(afterPause.defaultPrevented).toBe(true);
     expect(onZoomTime).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MainChart Alt-click", () => {
+  // — Alt-click places the entry (ARCHITECTURE.md D-58)
+  function altPointer(type: string, x: number, y: number): PointerEvent {
+    const event = pointer(type, x, y);
+    Object.defineProperty(event, "altKey", { value: true });
+    return event;
+  }
+
+  function renderChart(handlers: { onPan?: () => void; onPanPrice?: () => void; onAltPlace?: (priceTicks: number, spanTicks: number) => void; renderOverlay?: (frame: PositionFrame) => null }) {
+    render(
+      <MainChart
+        model={chartModel()}
+        spec={market.instrument}
+        crosshair={createCrosshairStore()}
+        summary="MES chart"
+        onZoomTime={noop}
+        onZoomPrice={noop}
+        onPan={handlers.onPan ?? noop}
+        onPanPrice={handlers.onPanPrice ?? noop}
+        onReset={noop}
+        onAltPlace={handlers.onAltPlace}
+        renderOverlay={handlers.renderOverlay}
+      />,
+    );
+    return overlay();
+  }
+
+  it("should place at the clicked tick and not pan when the plot is Alt-clicked and dragged", () => {
+    const onPan = vi.fn();
+    const onPanPrice = vi.fn();
+    const onAltPlace = vi.fn<(priceTicks: number, spanTicks: number) => void>();
+    const canvas = renderChart({ onPan, onPanPrice, onAltPlace });
+    const plotHeight = 400 - TIME_AXIS_HEIGHT;
+
+    fireEvent(canvas, altPointer("pointerdown", 300, 150));
+    fireEvent(canvas, pointer("pointermove", 360, 220));
+    fireEvent(canvas, pointer("pointerup", 360, 220));
+
+    expect(onAltPlace).toHaveBeenCalledTimes(1);
+    expect(onAltPlace).toHaveBeenCalledWith(Math.round(100_000 * (1 - 150 / plotHeight)), 100_000);
+    expect(onPan).not.toHaveBeenCalled();
+    expect(onPanPrice).not.toHaveBeenCalled();
+  });
+
+  it("should still pan and place nothing when the plot is dragged without Alt", () => {
+    const onPan = vi.fn();
+    const onAltPlace = vi.fn();
+    const canvas = renderChart({ onPan, onAltPlace });
+
+    fireEvent(canvas, pointer("pointerdown", 120, 80));
+    fireEvent(canvas, pointer("pointermove", 180, 80));
+    fireEvent(canvas, pointer("pointerup", 180, 80));
+
+    expect(onPan).toHaveBeenCalledTimes(1);
+    expect(onAltPlace).not.toHaveBeenCalled();
+  });
+
+  it("should place nothing when Alt-click lands on the price axis", () => {
+    const onAltPlace = vi.fn();
+    const canvas = renderChart({ onAltPlace });
+
+    fireEvent(canvas, altPointer("pointerdown", 790, 150));
+
+    expect(onAltPlace).not.toHaveBeenCalled();
+  });
+
+  it("should hand the overlay the plot's edges and price range when it draws", () => {
+    const renderOverlay = vi.fn<(frame: PositionFrame) => null>(() => null);
+    renderChart({ renderOverlay });
+
+    const frame = renderOverlay.mock.calls.at(-1)?.[0];
+    expect(frame).toMatchObject({ top: 0, bottom: 400 - TIME_AXIS_HEIGHT, lowTicks: 0, highTicks: 100_000 });
+    expect(frame && frame.right > frame.left).toBe(true);
+    expect(frame && frame.axisWidth > 0).toBe(true);
   });
 });

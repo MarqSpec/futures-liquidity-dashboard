@@ -126,6 +126,84 @@ public sealed class RegimeTests
         state.WarmupBars.Should().Be(28);
     }
 
+    // reference: REQUIREMENTS.md FR-75
+    [Fact]
+    public void RangeZones_ShouldFollowTheTrackersOwnClassification_WhenASeriesRanges()
+    {
+        var tracker = new RegimeTracker(Bar, RegimeOptions.Default);
+        var random = new Random(5);
+        for (var i = 0; i < 80; i++)
+        {
+            var close = 10_000 + random.Next(-6, 7);
+            PlayBar(tracker, i, close + 8, close - 8, close);
+        }
+
+        tracker.AdvanceTo(T0 + (81L * Bar * 1000));
+
+        tracker.Trend.Should().Be(TrendRegime.Ranging);
+        var zones = tracker.RangeZones;
+        zones.Should().NotBeEmpty();
+        zones[^1].EndMs.Should().Be(T0 + (80L * Bar * 1000), "the live zone ends at the last closed bar");
+        zones[0].StartMs.Should().BeGreaterThanOrEqualTo(T0 + ((RegimeOptions.Default.WarmupBars - 1L) * Bar * 1000), "warmup bars are Unknown");
+        zones.Should().OnlyContain(z => z.LowTicks >= 10_000 - 14 && z.HighTicks <= 10_000 + 14 && z.LowTicks < z.HighTicks);
+    }
+
+    [Fact]
+    public void RangeZones_ShouldGrowWithEachClosedBar_AndNeverHoldTheDevelopingBar()
+    {
+        var tracker = new RegimeTracker(Bar, RegimeOptions.Default);
+        var random = new Random(5);
+        for (var i = 0; i < 80; i++)
+        {
+            var close = 10_000 + random.Next(-6, 7);
+            PlayBar(tracker, i, close + 8, close - 8, close);
+        }
+
+        // Bar 79 is still forming: its trades are in, but it has not closed
+        tracker.Trend.Should().Be(TrendRegime.Ranging);
+        tracker.RangeZones[^1].EndMs.Should().Be(T0 + (79L * Bar * 1000));
+        var version = tracker.RangeZoneVersion;
+
+        tracker.AdvanceTo(T0 + (80L * Bar * 1000));
+
+        tracker.RangeZones[^1].EndMs.Should().Be(T0 + (80L * Bar * 1000));
+        tracker.RangeZoneVersion.Should().BeGreaterThan(version);
+    }
+
+    [Fact]
+    public void RangeZones_ShouldBeEmpty_WhileWarmingUpOrTrending()
+    {
+        var tracker = new RegimeTracker(Bar, RegimeOptions.Default);
+        var random = new Random(3);
+        for (var i = 0; i < 80; i++)
+        {
+            var close = 10_000 + (i * 6) + random.Next(-2, 3);
+            PlayBar(tracker, i, close + 4, close - 4, close);
+        }
+
+        tracker.AdvanceTo(T0 + (81L * Bar * 1000));
+
+        tracker.Trend.Should().Be(TrendRegime.TrendingUp);
+        tracker.RangeZones.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TrimRangeZones_ShouldDropZonesOlderThanTheCutoff()
+    {
+        var tracker = new RegimeTracker(Bar, RegimeOptions.Default);
+        var random = new Random(5);
+        for (var i = 0; i < 80; i++)
+        {
+            var close = 10_000 + random.Next(-6, 7);
+            PlayBar(tracker, i, close + 8, close - 8, close);
+        }
+
+        tracker.AdvanceTo(T0 + (81L * Bar * 1000));
+        tracker.TrimRangeZones(T0 + (81L * Bar * 1000));
+
+        tracker.RangeZones.Should().BeEmpty();
+    }
+
     private static void PlayBar(RegimeTracker tracker, int index, long high, long low, long close)
     {
         var start = T0 + (index * Bar * 1000L);

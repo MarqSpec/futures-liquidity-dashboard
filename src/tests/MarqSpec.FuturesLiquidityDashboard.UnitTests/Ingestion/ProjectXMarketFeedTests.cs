@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using MarqSpec.Client.ProjectX;
 using MarqSpec.Client.ProjectX.Api.Models;
 using MarqSpec.Client.ProjectX.WebSocket;
@@ -211,6 +212,90 @@ public sealed class ProjectXMarketFeedTests
         state.Building.Should().BeFalse();
         state.OnDepth(Row(DomType.Ask, 6800.25m, 9), 2_700, 1_500).Should().ContainSingle()
             .Which.Should().BeOfType<DepthUpdateEvent>().Which.Quantity.Should().Be(9);
+    }
+
+    [Fact]
+    public void OnDepth_ShouldCountGatewayPrices_WhenTheSnapshotTrimsToLevelsPerSide()
+    {
+        using var width = new DepthWidthDiagnostic(
+            new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>(),
+            NullLogger<DepthWidthDiagnostic>.Instance,
+            levelsPerSide: 10,
+            ladderLevels: 20);
+        var state = new ProjectXMarketFeed.ContractState(Es, depthWidth: width);
+        state.Connected(1_000, 1_500);
+
+        for (var i = 0; i < 12; i++)
+        {
+            state.OnDepth(Row(DomType.Bid, 6800.00m - (0.25m * i), 3), 1_100, 1_500).Should().BeEmpty();
+        }
+
+        for (var i = 0; i < 11; i++)
+        {
+            state.OnDepth(Row(DomType.Ask, 6800.25m + (0.25m * i), 3), 1_100, 1_500).Should().BeEmpty();
+        }
+
+        var snapshot = state.TrySettle(2_600, 10)!;
+
+        snapshot.Bids.Should().HaveCount(10);
+        snapshot.Asks.Should().HaveCount(10);
+        snapshot.LevelsPerSide.Should().Be(10);
+        var row = width.Report().Instruments.Should().ContainSingle().Subject;
+        row.Instrument.Should().Be("MES");
+        row.MaxBidLevels.Should().Be(12);
+        row.MaxAskLevels.Should().Be(11);
+        row.CurrentBidLevels.Should().Be(12);
+        row.CurrentAskLevels.Should().Be(11);
+    }
+
+    [Fact]
+    public void OnDepth_ShouldKeepCountingStreamingLevels_WhenTheSettleWindowHasClosed()
+    {
+        using var width = new DepthWidthDiagnostic(
+            new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>(),
+            NullLogger<DepthWidthDiagnostic>.Instance,
+            levelsPerSide: 10,
+            ladderLevels: 20);
+        var state = new ProjectXMarketFeed.ContractState(Es, depthWidth: width);
+        state.Connected(0, 100);
+        state.OnDepth(Row(DomType.Bid, 6800.00m, 1), 10, 100);
+        state.TrySettle(200, 10);
+
+        state.OnDepth(Row(DomType.Bid, 6799.75m, 1), 300, 100).Should().ContainSingle()
+            .Which.Should().BeOfType<DepthUpdateEvent>();
+        state.OnDepth(Row(DomType.Bid, 6799.50m, 1), 300, 100);
+
+        var row = width.Report().Instruments.Should().ContainSingle().Subject;
+        row.MaxBidLevels.Should().Be(3);
+        row.CurrentBidLevels.Should().Be(3);
+    }
+
+    [Fact]
+    public void OnDepth_ShouldClearTheCurrentWidth_WhenTheGatewayResets_AndIgnoreRowsWhileDepthIsOff()
+    {
+        using var width = new DepthWidthDiagnostic(
+            new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>(),
+            NullLogger<DepthWidthDiagnostic>.Instance,
+            levelsPerSide: 10,
+            ladderLevels: 20);
+        var state = new ProjectXMarketFeed.ContractState(Es, depthWidth: width);
+        state.Connected(0, 100);
+        state.OnDepth(Row(DomType.Bid, 6800.00m, 1), 10, 100);
+        state.OnDepth(Row(DomType.Bid, 6799.75m, 1), 10, 100);
+        state.TrySettle(200, 10);
+
+        state.OnDepth(Row(DomType.Reset, 0, 0), 300, 100).Should().ContainSingle().Which.Should().BeOfType<BookResetEvent>();
+        width.Report().Instruments.Should().ContainSingle().Which.CurrentBidLevels.Should().Be(0);
+        width.Report().Instruments.Should().ContainSingle().Which.MaxBidLevels.Should().Be(2);
+
+        state.OnDepth(Row(DomType.Bid, 6800.10m, 4), 400, 100).Should().BeEmpty();
+        width.Report().Instruments.Should().ContainSingle().Which.CurrentBidLevels.Should().Be(0);
+
+        state.TrySettle(500, 10);
+        state.DepthOff(600);
+        state.OnDepth(Row(DomType.Bid, 6800.00m, 9), 700, 100).Should().BeEmpty();
+        width.Report().Instruments.Should().ContainSingle().Which.CurrentBidLevels.Should().Be(0);
+        width.Report().Instruments.Should().ContainSingle().Which.MaxBidLevels.Should().Be(2);
     }
 
     [Fact]

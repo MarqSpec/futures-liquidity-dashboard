@@ -9,7 +9,7 @@ import { CENTER_FOLLOW_MS, LOCK_RELEASE_DRAG_PX, PINCH_AXIS_MIN_PX } from "../do
 import { chartZoomIn, chartZoomOut } from "../domain/chartCursor.ts";
 import { defaultLayout, type DetailChartId, type LayoutSettings } from "../domain/layout.ts";
 import { fromSnapshot, type MarketState } from "../domain/merge.ts";
-import { defaultWindow, type ViewWindow } from "../domain/viewWindow.ts";
+import { defaultWindow, MIN_PRICE_ZOOM, type ViewWindow } from "../domain/viewWindow.ts";
 import { createCrosshairStore, type CrosshairStore } from "../hooks/crosshair.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { FOOTPRINT_DELTA_STRIP } from "./drawFootprint.ts";
@@ -140,6 +140,14 @@ function lowerPrint(crosshair: CrosshairStore): number {
   return price;
 }
 
+/** A print 30% of the fitted span below the middle: past the old pan bound at the narrowest zoom. */
+function farPrint(crosshair: CrosshairStore): number {
+  const view = render(<Host shown={base} />);
+  const price = Math.round(priceAt(crosshair, plotMidY * 1.6));
+  view.unmount();
+  return price;
+}
+
 // — the footprint main chart takes the same controls.
 describe.each(["price", "footprint"] as const)("MarketView price controls on the %s chart", (shown) => {
   beforeEach(() => {
@@ -187,6 +195,28 @@ describe.each(["price", "footprint"] as const)("MarketView price controls on the
 
     expect(priceAt(crosshair, plotMidY)).toBeCloseTo(last, 0);
     expect(seenWindow.priceZoom).toBe(0.5);
+  });
+
+  it("should center a last price beyond the old pan bound at the narrowest zoom", async () => {
+    const user = userEvent.setup();
+    const crosshair = freshCrosshair();
+    const last = farPrint(crosshair);
+    render(<Host shown={withPrint(last)} start={{ ...fitted, priceZoom: MIN_PRICE_ZOOM }} />);
+
+    await user.click(screen.getByRole("button", { name: "Center price" }));
+
+    expect(priceAt(crosshair, plotMidY)).toBeCloseTo(last, 0);
+  });
+
+  it("should bring a last price beyond the old pan bound to the middle under Lock at the narrowest zoom", () => {
+    const crosshair = freshCrosshair();
+    const last = farPrint(crosshair);
+    vi.useFakeTimers();
+    render(<Host shown={withPrint(last)} start={{ ...fitted, priceZoom: MIN_PRICE_ZOOM }} locked />);
+    act(() => {
+      vi.advanceTimersByTime(CENTER_FOLLOW_MS * 20);
+    });
+    expect(priceAt(crosshair, plotMidY)).toBeCloseTo(last, 0);
   });
 
   it("should disable Center before the first trade", () => {

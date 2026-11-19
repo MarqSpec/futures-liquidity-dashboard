@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { PINCH_AXIS_MIN_PX } from "../domain/bookmap.ts";
 import { dragReleasesLock, pinchZoomsPrice } from "../domain/priceLock.ts";
@@ -31,6 +31,7 @@ import { timeDraw } from "../lib/perfProbe.ts";
 import { mainChartDrawKey } from "./chartDrawKey.ts";
 import { drawFootprint, type FootprintModel } from "./drawFootprint.ts";
 import { drawMainChart, drawMainCrosshair, type FootprintLayer, type MainChartGeometry, type MainChartModel, type Marker } from "./drawMainChart.ts";
+import type { PositionFrame } from "./PositionLines.tsx";
 
 /** Props of the main chart. */
 export interface MainChartProps {
@@ -57,6 +58,10 @@ export interface MainChartProps {
   readonly priceLocked?: boolean;
   /** Called once, when a locked plot drag goes far enough vertically to release Lock. */
   readonly onReleaseLock?: () => void;
+  /** Alt-click on the plot: the clicked price, on the tick grid, and the visible price span. The press does not pan (D-58). */
+  readonly onAltPlace?: (priceTicks: number, spanTicks: number) => void;
+  /** Draws over the plot, given where it is and the price range it shows; the simulated position's lines (FR-72). */
+  readonly renderOverlay?: (frame: PositionFrame) => ReactNode;
 }
 
 interface Tooltip {
@@ -142,8 +147,34 @@ function footprintModelOf(model: MainChartModel, layer: FootprintLayer): Footpri
     missingRanges: layer.missingRanges,
     approximateRanges: layer.approximateRanges,
     lastTicks: model.candles.at(-1)?.c ?? null,
+    rangeZones: model.rangeZones,
     watermark: status.code === "LIVE" ? null : status.code === "DEGRADED" ? "DEGRADED" : status.provenance,
   };
+}
+
+function frameOf(geometry: MainChartGeometry, width: number): PositionFrame {
+  return {
+    left: geometry.plotLeft,
+    right: geometry.plotWidth,
+    top: 0,
+    bottom: geometry.plotHeight,
+    axisWidth: Math.max(0, width - geometry.plotWidth),
+    lowTicks: geometry.price.d0,
+    highTicks: geometry.price.d1,
+  };
+}
+
+function sameFrame(a: PositionFrame | null, b: PositionFrame): boolean {
+  return (
+    a !== null &&
+    a.left === b.left &&
+    a.right === b.right &&
+    a.top === b.top &&
+    a.bottom === b.bottom &&
+    a.axisWidth === b.axisWidth &&
+    a.lowTicks === b.lowTicks &&
+    a.highTicks === b.highTicks
+  );
 }
 
 function inPlot(geometry: MainChartGeometry, x: number, y: number): boolean {
@@ -157,16 +188,32 @@ function inPlot(geometry: MainChartGeometry, x: number, y: number): boolean {
  * the pointer (Shift+wheel zooms price). While a page or container that can scroll cuts the plot off, the wheel scrolls
  * that instead (D-53). A drag that starts inside the plot pans time and price (time only while Lock holds, until it
  * goes 4 px vertically, D-54); one finger
- * does the same, and a second finger pinch-zooms. Double-click returns to the auto-fit view. The chart is also a keyboard control: arrows move
+ * does the same, and a second finger pinch-zooms. Double-click returns to the auto-fit view. Alt-click on the plot places the
+ * simulated position's entry instead of panning (D-58). The chart is also a keyboard control: arrows move
  * a cell, Shift+arrows pan, plus and minus zoom, Home returns to the auto-fit view.
  */
-export function MainChart({ model, spec, crosshair, summary, label = "Price, liquidity and order flow", onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked = false, onReleaseLock }: MainChartProps) {
+export function MainChart({
+  model,
+  spec,
+  crosshair,
+  summary,
+  label = "Price, liquidity and order flow",
+  onZoomTime,
+  onZoomPrice,
+  onPan,
+  onPanPrice,
+  onReset,
+  priceLocked = false,
+  onReleaseLock,
+  onAltPlace,
+  renderOverlay,
+}: MainChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const geometryRef = useRef<MainChartGeometry | null>(null);
   const drawnKey = useRef("");
-  const handlers = useRef({ onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock });
+  const handlers = useRef({ onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock, onAltPlace });
   const modelRef = useRef(model);
   const announced = useRef<LiveAnnouncement | null>(null);
   const cursorRef = useRef<ChartCursor | null>(null);
@@ -174,13 +221,15 @@ export function MainChart({ model, spec, crosshair, summary, label = "Price, liq
   const [cursor, setCursor] = useState<ChartCursor | null>(null);
   const [hover, setHover] = useState<ChartCursor | null>(null);
   const [liveText, setLiveText] = useState("");
+  // The plot's edges and price range as last drawn, for the overlay; set only when they change.
+  const [frame, setFrame] = useState<PositionFrame | null>(null);
   const { width, height } = useElementSize(wrapRef);
   const fontEpoch = useCanvasFontEpoch();
   const palette = useCanvasPalette();
   const takesWheel = useWheelGate();
 
   useLayoutEffect(() => {
-    handlers.current = { onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock };
+    handlers.current = { onZoomTime, onZoomPrice, onPan, onPanPrice, onReset, priceLocked, onReleaseLock, onAltPlace };
     modelRef.current = model;
     cursorRef.current = cursor;
   });
@@ -194,6 +243,14 @@ export function MainChart({ model, spec, crosshair, summary, label = "Price, liq
     geometryRef.current = timeDraw(() => (layer ? drawFootprint(surface, footprintModelOf(model, layer)) : drawMainChart(surface, model)));
     drawnKey.current = key;
   });
+
+  // After the draw above, so the overlay follows the plot it was just drawn on.
+  useEffect(() => {
+    const geometry = geometryRef.current;
+    if (!geometry) return;
+    const next = frameOf(geometry, width);
+    setFrame((current) => (sameFrame(current, next) ? current : next));
+  }, [model, width, height, fontEpoch, palette]);
 
   useEffect(() => {
     const paint = () => {
@@ -351,6 +408,13 @@ export function MainChart({ model, spec, crosshair, summary, label = "Price, liq
       }
       if (event.button !== 0 || !geometry) return;
       if (!inPlot(geometry, x, y)) return;
+      // — Alt-click places the entry and never starts a pan (D-58)
+      const place = handlers.current.onAltPlace;
+      if (event.altKey && place) {
+        event.preventDefault();
+        place(Math.round(geometry.price.fromPx(y)), Math.abs(geometry.price.d1 - geometry.price.d0));
+        return;
+      }
       drag = { x, y, startY: y, pointer: event.pointerId, priceFree: false };
       canvas.setPointerCapture(event.pointerId);
     };
@@ -457,6 +521,7 @@ export function MainChart({ model, spec, crosshair, summary, label = "Price, liq
         <p className="visually-hidden">{summary}</p>
         <canvas ref={baseRef} aria-hidden="true" style={{ width, height }} />
         <canvas ref={overlayRef} className="pane-overlay pane-overlay-interactive" aria-hidden="true" style={{ width, height }} />
+        {frame && renderOverlay?.(frame)}
         <p id="chart-key-hint" className="chart-keys">
           {chartKeyHint}
         </p>

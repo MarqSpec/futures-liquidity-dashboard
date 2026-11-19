@@ -4,6 +4,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { defaultLayout, type LayoutSettings } from "../domain/layout.ts";
+import type { Position } from "../domain/position.ts";
 import { useLayout } from "./useLayout.ts";
 
 const STORAGE_KEY = "futures-liquidity-dashboard.layout";
@@ -682,5 +683,145 @@ describe("useLayout", () => {
     ]);
     expect(result.current.layout.instrument).toBe("MES");
     expect(result.current.source).toBe("server");
+  });
+  describe("positions", () => {
+    const position: Position = {
+      side: "long",
+      entryType: "limit",
+      entryTicks: 20000,
+      quantity: 1,
+      stopTicks: 19990,
+      targets: [],
+      contractId: "MESZ6",
+      createdMs: 1_760_000_000_000,
+      state: "planned",
+      fill: null,
+      exits: [],
+    };
+
+    function savedPut(): PutBody[] {
+      return installFetch((method) =>
+        method === "PUT"
+          ? jsonResponse({ saved: true, revision: 5, layout: { ...defaultLayout, instrument: "MGC" } })
+          : jsonResponse({ saved: true, revision: 4, layout: { ...defaultLayout, positions: { MES: position } } }),
+      );
+    }
+
+    it("should send no positions key when a save follows a change to another field", async () => {
+      vi.useFakeTimers();
+      const puts = savedPut();
+      const { result } = renderHook(() => useLayout());
+      await advance(0);
+
+      act(() => result.current.update((current) => ({ ...current, instrument: "MGC" })));
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts).toHaveLength(1);
+      expect(puts[0]?.layout.instrument).toBe("MGC");
+      expect("positions" in (puts[0]?.layout ?? {})).toBe(false);
+    });
+
+    it("should send no positions key when the server served none because it hid them", async () => {
+      vi.useFakeTimers();
+      const puts = installFetch((method) =>
+        method === "PUT"
+          ? jsonResponse({ saved: true, revision: 5, layout: defaultLayout })
+          : jsonResponse({ saved: true, revision: 4, layout: defaultLayout }),
+      );
+      const { result } = renderHook(() => useLayout());
+      await advance(0);
+
+      act(() => result.current.update((current) => ({ ...current, historyMinutes: 60 })));
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect("positions" in (puts[0]?.layout ?? {})).toBe(false);
+    });
+
+    it("should send the positions map when the viewer changed the positions", async () => {
+      vi.useFakeTimers();
+      const puts = savedPut();
+      const { result } = renderHook(() => useLayout());
+      await advance(0);
+
+      act(() => result.current.update((current) => ({ ...current, positions: {} })));
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts).toHaveLength(1);
+      expect(puts[0]?.layout.positions).toEqual({});
+    });
+
+    it("should send the local positions when the server has nothing saved", async () => {
+      vi.useFakeTimers();
+      remember(0, { ...defaultLayout, positions: { MES: position } }, true);
+      const puts = installFetch((method) =>
+        method === "PUT"
+          ? jsonResponse({ saved: true, revision: 1, layout: { ...defaultLayout, positions: { MES: position } } })
+          : jsonResponse({ saved: false, revision: 0, layout: defaultLayout }),
+      );
+
+      renderHook(() => useLayout());
+      await advance(0);
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts).toHaveLength(1);
+      expect(puts[0]?.layout.positions).toHaveProperty("MES");
+    });
+
+    it("should omit the positions again when a later save follows a saved positions change", async () => {
+      vi.useFakeTimers();
+      const puts = savedPut();
+      const { result } = renderHook(() => useLayout());
+      await advance(0);
+
+      act(() => result.current.update((current) => ({ ...current, positions: {} })));
+      await advance(SAVE_DELAY_MS + 1);
+      act(() => result.current.update((current) => ({ ...current, historyMinutes: 60 })));
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts).toHaveLength(2);
+      expect("positions" in (puts[1]?.layout ?? {})).toBe(false);
+    });
+
+    it("should omit the positions when an unsent edit is put after a reload and the positions match the server's", async () => {
+      vi.useFakeTimers();
+      remember(4, { ...defaultLayout, instrument: "MCL" }, true);
+      const puts = installFetch((method) =>
+        method === "PUT"
+          ? jsonResponse({ saved: true, revision: 5, layout: { ...defaultLayout, instrument: "MCL", positions: { MES: position } } })
+          : jsonResponse({ saved: true, revision: 4, layout: { ...defaultLayout, positions: {} } }),
+      );
+
+      renderHook(() => useLayout());
+      await advance(0);
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts).toHaveLength(1);
+      expect("positions" in (puts[0]?.layout ?? {})).toBe(false);
+    });
+
+    it("should send the positions map again when the first save of a change fails", async () => {
+      vi.useFakeTimers();
+      let failFirst = true;
+      const puts = installFetch((method) => {
+        if (method === "PUT") {
+          if (failFirst) {
+            failFirst = false;
+            return jsonResponse({ detail: "down" }, 500);
+          }
+          return jsonResponse({ saved: true, revision: 5, layout: { ...defaultLayout, positions: {} } });
+        }
+        return jsonResponse({ saved: true, revision: 4, layout: { ...defaultLayout, positions: { MES: position } } });
+      });
+      const { result } = renderHook(() => useLayout());
+      await advance(0);
+
+      act(() => result.current.update((current) => ({ ...current, positions: {} })));
+      await advance(SAVE_DELAY_MS + 1);
+      act(() => result.current.update((current) => ({ ...current, instrument: "MGC" })));
+      await advance(SAVE_DELAY_MS + 1);
+
+      expect(puts.length).toBeGreaterThanOrEqual(2);
+      expect(puts[puts.length - 1]?.layout.positions).toEqual({});
+    });
   });
 });

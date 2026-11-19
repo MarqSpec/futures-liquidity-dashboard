@@ -36,7 +36,9 @@
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Protocols.Json" Version="10.0.14" />
     <PackageVersion Include="Microsoft.AspNetCore.Http.Connections.Client" Version="10.0.14" />
     <PackageVersion Include="Microsoft.AspNetCore.Http.Connections.Common" Version="10.0.14" />
-    <!-- WebApplicationFactory for the integration tier. -->
+    <!-- The official Anthropic C# SDK: the Claude Messages API call behind position feedback (ARCHITECTURE.md D-61). -->
+    <PackageVersion Include="Anthropic" Version="13.10.0" />
+    <!-- WebApplicationFactory: the in-process host tests of the unit tier (CONVENTIONS.md §8.1) and the integration tier. -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />

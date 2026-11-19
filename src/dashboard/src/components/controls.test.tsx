@@ -107,7 +107,8 @@ describe("LayersPanel toggles", () => {
 
     const swatches = [...container.querySelectorAll<HTMLElement>(".toggle-swatch")].map((node) => node.style.background);
 
-    expect(swatches).toEqual(["var(--vwap)", "var(--ema-10)", "var(--ema-13)", "var(--ema-24)", "var(--ema-48)", "var(--ema-200)"]);
+    // — the range-zone box.
+    expect(swatches).toEqual(["var(--vwap)", "var(--ema-10)", "var(--ema-13)", "var(--ema-24)", "var(--ema-48)", "var(--ema-200)", "var(--range-zone)"]);
   });
 
   it("should hide a swatch from assistive technology and keep the checkbox name when it has one", () => {

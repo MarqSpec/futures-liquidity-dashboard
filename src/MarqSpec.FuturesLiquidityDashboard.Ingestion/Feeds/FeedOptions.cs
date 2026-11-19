@@ -121,9 +121,15 @@ public sealed class ProjectXFeedOptions
     [Range(200, 10_000)]
     public int SnapshotSettleMs { get; set; } = 1500;
 
-    /// <summary>Depth levels kept per side from the gateway book.</summary>
-    [Range(5, 50)]
-    public int LevelsPerSide { get; set; } = 10;
+    /// <summary>Least and most depth levels kept per side. The gateway may send fewer; those are not padded (REQUIREMENTS.md FR-11).</summary>
+    public const int MinLevelsPerSide = 5;
+
+    /// <summary>Upper bound. A live book of 50 was this process's ceiling; the gateway documents no maximum.</summary>
+    public const int MaxLevelsPerSide = 200;
+
+    /// <summary>Depth levels kept per side from the gateway book. Default 50 so a 40-level ladder is fed where the gateway sends that many.</summary>
+    [Range(MinLevelsPerSide, MaxLevelsPerSide)]
+    public int LevelsPerSide { get; set; } = 50;
 
     /// <summary>
     /// Most contracts streamed at once (trades and quotes); 0 streams every contract selected. ProjectX does not

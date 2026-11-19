@@ -56,6 +56,7 @@ public sealed class RegimeTracker
     private readonly EfficiencyRatio _efficiency;
     private readonly Ema _fast;
     private readonly Ema _slow;
+    private readonly RangeZoneBuilder _zones = new();
     private TrendRegime _trend = TrendRegime.Unknown;
     private long? _sinceMs;
     private int _seen;
@@ -78,6 +79,21 @@ public sealed class RegimeTracker
     public int WarmupBars => _options.WarmupBars;
 
     public TrendRegime Trend => _trend;
+
+    /// <summary>
+    /// The stretches this tracker classified Ranging, from its own closed bars (REQUIREMENTS.md FR-75): the same rule as
+    /// <see cref="Trend"/>, never a second copy of it. Oldest first; the developing bar is never in one.
+    /// </summary>
+    public IReadOnlyList<RangeZoneDto> RangeZones => _zones.Zones;
+
+    /// <summary>Rises whenever <see cref="RangeZones"/> changes.</summary>
+    public long RangeZoneVersion => _zones.Version;
+
+    /// <summary>Drops the range zones that ended at or before <paramref name="cutoffMs"/> (REQUIREMENTS.md FR-2's retention).</summary>
+    public void TrimRangeZones(long cutoffMs) => _zones.Trim(cutoffMs);
+
+    /// <summary>This timeframe's range zones on the wire (INTERFACES.md D.2).</summary>
+    public RangeZoneSetDto RangeZoneSet() => new(TimeframeSeconds, _zones.Zones.ToList());
 
     public void AddTrade(long timeMs, long priceTicks, long quantity, bool buyerAggressor)
     {
@@ -130,6 +146,7 @@ public sealed class RegimeTracker
     {
         if (bar.IsEmpty || bar.High is not { } high || bar.Low is not { } low || bar.Close is not { } close)
         {
+            _zones.Add(bar, TrendRegime.Unknown);
             return;
         }
 
@@ -144,6 +161,8 @@ public sealed class RegimeTracker
             _trend = next;
             _sinceMs = bar.EndMs;
         }
+
+        _zones.Add(bar, next);
     }
 
     private static double? Round(double? value, int decimals = 2) => value is { } v ? Math.Round(v, decimals) : null;

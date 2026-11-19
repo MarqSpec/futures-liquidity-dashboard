@@ -3,7 +3,8 @@
 Every interface the system consumes or exposes, and the contract each side may rely on. Section IDs (`A.5`, `D.2`)
 are cited from the code.
 
-Interfaces C and D are built and tested in process. Interfaces A and B are built against the documented interface
+Interfaces C, D and E are built and tested in process (E against a stubbed transport; the live Messages API is
+unconfirmed). Interfaces A and B are built against the documented interface
 of the `MarqSpec.Client.ProjectX` client library (3.0.0) and have **not** run against the TopstepX gateway: every
 mapping in A and B is an assumption until a check against a real account replaces it with evidence
 ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-1, D-15). The open questions are at the end.
@@ -15,7 +16,8 @@ mapping in A and B is an assumption until a check against a real account replace
 | A | Market data: the ProjectX market hub, or the synthetic or replay feed in its place | consumed | SignalR (WebSocket) through the client library; in process for Synthetic; a JSON Lines file for Replay | ProjectX credentials, server-side only; none for Synthetic and Replay |
 | B | ProjectX contract metadata and historical bars | consumed | REST through the client library | the same credentials |
 | C | Agent context and overlay | exposed | HTTPS (JSON) | API key with `read-context` / `publish-overlay` (D-16) |
-| D | Browser surface: REST, the SignalR stream, layouts, health and metrics | exposed | HTTPS + SignalR | API key with `view-dashboard` / `configure-layout` (D-16); `/health/live` open |
+| D | Browser surface: REST, the SignalR stream, layouts, plan metrics and feedback, health and metrics | exposed | HTTPS + SignalR | API key with `view-dashboard` / `configure-layout` / `request-feedback` (D-16); `/health/live` open |
+| E | Claude Messages API, for position feedback (FR-74, D-61) | consumed | HTTPS (JSON) through the official Anthropic C# SDK | The Claude API key, server-side only (`Feedback__ApiKey` or `ANTHROPIC_API_KEY`) |
 
 Every caller-facing payload is JSON with camelCase names and enums as strings. Prices on the wire are integer
 **tick keys** (price ÷ the contract's tick size) unless a field says it is in price units; times are Unix
@@ -57,7 +59,7 @@ sequenceDiagram
   F->>H: connect, subscribe per contract
   F-->>E: status (connected) + book reset (new epoch)
   Note over F: collect depth rows for SnapshotSettleMs (1,500 ms)
-  F-->>E: snapshot of LevelsPerSide (10) per side: book known
+  F-->>E: snapshot of LevelsPerSide (50) per side: book known
   loop until disconnect
     H-->>F: depth rows, trades, quotes
     F-->>E: depth updates, trades, quotes
@@ -106,7 +108,9 @@ told apart from bad data (FR-5).
 - A trade typed Buy is a buy aggressor and Sell a sell aggressor; untyped, the tick rule decides. Trade IDs are
   synthesized per epoch, and epochs are unique for the life of the process.
 - After every (re)subscribe the feed emits a status and a reset, collects depth rows for `SnapshotSettleMs`, and
-  emits one snapshot of the best `LevelsPerSide` per side. A price outside the snapshot is unknown, never zero.
+  emits one snapshot of the best `LevelsPerSide` (default 50, allowed 5–200) per side. A price outside the snapshot is
+  unknown, never zero, and a side the gateway fills with fewer prices is kept at that length, never padded. The feed also
+  counts the distinct bid and ask prices it receives before that trim, for `GET /api/diagnostics/depth-width` (D.1).
 - Contracts (D-26): with `Engine:Instruments` `*`, the gateway's available contracts, one per root. The root is the
   month-code name (`^ROOT[FGHJKMNQUVXZ][0-9]{1,2}$`, so ES never matches MES) or the symbol id `F.US.{root}`. A
   configured id wins, then the active contract. The gateway's tick size and value win over the catalog.
@@ -193,13 +197,17 @@ The OpenAPI document is generated at runtime: in Development the API serves it a
 | GET | `/api/snapshot/{instrument}?historyMinutes=&indicatorMinutes=` | `view-dashboard` | A full `DashboardSnapshot`; `indicatorMinutes` (1, 5 or 15) keeps one timeframe | 200; 403; 404 | FR-1, FR-4 |
 | GET | `/api/layouts/me` | `view-dashboard` | `{saved, revision, layout}`; `saved` false and `revision` 0 when nothing is stored, with the defaults | 200; 403 | FR-9 |
 | PUT | `/api/layouts/me` | `configure-layout` for the layout's instrument | Save `{revision, layout}`; stored only when `revision` matches the stored counter | 200; 409 with the stored document; 400 `ValidationProblem`; 403 | FR-9 |
+| POST | `/api/plans/metrics/{instrument}` | `view-dashboard` | The FR-73 metrics of a simulated position. The body is one FR-72 position; nothing is stored | 200 `PlanMetrics`; 400 `ValidationProblem` naming the field; 403; 404 unknown or disabled instrument | FR-73, D-60 |
+| GET | `/api/plans/feedback/status` | `request-feedback` on any instrument | Whether feedback is available, and the month's spend against the cap. Never holds the key | 200 `FeedbackStatus`; 403 | FR-74, D-61 |
+| POST | `/api/plans/feedback/{instrument}` | `request-feedback` **and** `view-dashboard` | Feedback on a simulated position, on request, beside its FR-73 metrics. The body is one FR-72 position; nothing is stored | 200 `PlanFeedbackReply` (feedback, or `feedback: null` with a `reason`); 400; 403; 404; 429 `FeedbackStatus` (`budget-exhausted`) or `FeedbackRefusal` (`rate-limited`, `request-in-flight`), with `Retry-After`; 503 `FeedbackStatus` (`disabled`, `no-key`) | FR-74, D-61 |
 | GET | `/health/live` | none | The process is up | 200 | NFR-3 |
 | GET | `/health/ready` | a caller outside Development (D-30) | Ingestion state per instrument ([`OBSERVABILITY.md`](OBSERVABILITY.md) §3) | 200 Healthy / Degraded; 503 Unhealthy; 401 | NFR-3, FR-4 |
 | GET | `/metrics` | as `/health/ready` | Prometheus exposition ([`OBSERVABILITY.md`](OBSERVABILITY.md) §2) | 200; 401 | — |
+| GET | `/api/diagnostics/depth-width` | as `/health/ready` | How many bid and ask prices the market hub sent per instrument, before the `LevelsPerSide` trim. No prices, contract ids or credentials | 200 `DepthWidthReport`; 401 | FR-11, FR-6 |
 
 **Authentication (D-16, D-30).** `X-Api-Key: <key>` on every request. On `/hubs` paths only, SignalR may pass the
 key as `access_token` in the query string or as `Authorization: Bearer`. No key gets the configured anonymous
-grants (all four in Development, none in production, so 401). An unknown key is always 401. A grant is
+grants (all five in Development, none in production, so 401). An unknown key is always 401. A grant is
 `permission:scope`, with scope an instrument root or `*`.
 
 **`LayoutSettings`.** `instrument` (a root, default `MES`); `watchlist` (up to `Api:MaxWatchlist` distinct roots,
@@ -211,10 +219,18 @@ and Detail keep the last price in the middle of the plot, D-54); `detailChart` (
 `indicatorPane` (`volume`, `cvd`, `rsi14`, `macd`, `atr14` or `tpo`, default `volume`: the tab the indicator dock
 shows on Detail and Order Flow; a `footprint` sent by an older client is stored as `volume`);
 `indicatorDockCollapsed` (boolean, default false; collapses the dock on both tabs); `sideSectionsCollapsed` (any of `ladder`, `liquidity`, `signals`,
-`levels`, `profile`, `layers`; default none); `showPriceLine` (boolean, default true); `panes` and `signals` (the
+`levels`, `profile`, `layers`; default none); `positions` (a map from product root to one simulated position, default empty, FR-72, D-57); `rangeZoneTimeframe` (`300`, the default, `900` or `off`: the bars whose range zones Detail and Order Flow shade, FR-75; any other value is refused with 400); `showPriceLine` (boolean, default true); `panes` (which includes `range-zones`, the Layers toggle "Range zones", on unless set false) and `signals` (the
 pane and signal ids the client knows). For the optional fields, a PUT that omits one keeps the stored value, and an
 explicit null or an unknown value is refused with 400 (FR-9). Layouts are held in memory per key name; after a
 restart the dashboard re-sends its local copy when it matches the schema.
+
+**`positions`** (FR-72). A position is `side` (`long` or `short`), `entryType` (`limit` or `market`), `entryTicks` (a whole number of ticks; required for a limit), `quantity` (1 to 100), `stopTicks`, `targets` (at most three `{ priceTicks, quantity }`, quantities summing to no more than `quantity`), `contractId` and `createdMs`, plus the tracking fields the dashboard writes as it paper-tracks the position (D-59): `state` (`planned`, `working`, `filled` or `closed`), `fill` (`{ timeMs, priceTicks, riskTicks }` or null) and `exits` (`{ timeMs, priceTicks, quantity, kind }`, `kind` `stop` or `target`). For a long the stop is below the entry and the targets above; a short is the mirror image; every price is a whole number of ticks within 1,000,000,000 of zero. An invalid position in a layout PUT is a 400 that names the field by its path (for example `Positions[MES].StopTicks`); the `/api/plans/*` routes name it as `Position.StopTicks`. A position whose `contractId` is not the root's active contract is dropped on read. A PUT that omits `positions` keeps the stored ones.
+
+**`POST /api/plans/metrics/{instrument}`** (FR-73, D-60). The grant is checked before the body. The response, `PlanMetrics`, carries `definitionsVersion` (1), `instrument`, `contractId`, `asOfMs`, `statusCode`, `lastTicks` and `atrTicks`; `legs[]` (the entry, the stop and each target, in that order), each with its distance from the last price, the resting size ahead, how often recent bars traded strictly through the price, when the price was last reached, what lies in the way, the key levels within 2 ATR and the order flow at the price; the plan's reward to risk, stop distance in ATR, stop placement and, for a market entry, slippage; the two regimes; and the coverage. A value the inputs cannot support is null beside a reason, never zero. Enumerated values are lowercase kebab-case.
+
+**`POST /api/plans/feedback/{instrument}` and `GET /api/plans/feedback/status`** (FR-74, D-61). Checked in this order: the instrument (404), both grants (403), availability (503 with the status body when feedback is disabled or Claude has no key), the body (400), the month's budget (429 with the status body, and no call), then the viewer's limits (429 `{reason, retryAfterSeconds}`: `rate-limited` after six starts in a minute, `request-in-flight` while that viewer's previous request runs). `PlanFeedbackReply` is `{metrics, feedback, reason, provider, model}`: `provider` is `claude` or `mock`; `reason` is null when `feedback` is set and otherwise one of `refusal`, `truncated`, `invalid-response`, `timeout`, `upstream-rate-limited`, `upstream-error`, `connection-error` or `api-error`. `feedback` is `{summary, legs, risks, asOfMs, definitionsVersion, droppedCites}`: each leg has a `fillLikelihood` (`low`, `medium`, `high`, `unknown`), an `assessment`, a `suggestion` (`{priceTicks, why}` or null) and `cites`, the metric names it rests on; each risk has `text` and `cites`; `droppedCites` counts the claims the server removed. `FeedbackStatus` is `{available, reason, provider, model, spentUsd, budgetUsd, month, resetsAtMs}` and never holds the key.
+
+**`GET /api/diagnostics/depth-width`.** The caller rule is the same as `/metrics`. The body is `levelsPerSide` and `ladderLevels` (the configured values; defaults 50 and 40), `maxPricesPerSide` (256) and `instruments[]`, each `{instrument, maxBidLevels, typicalBidLevels, maxAskLevels, typicalAskLevels, currentBidLevels, currentAskLevels, samples, capped}`. The counts are distinct prices the market hub sent before the trim; a zero size drops a price; a reset clears the current count and keeps the maximum; `typical` is the lower median of one sample a second over the last 256; `capped` is true once a side hit the 256-price store, and the maximum is then a lower bound.
 
 **`summary`** (FR-55, FR-57; built from trades and quotes only, so cheap for every product): `last`, `bid`, `ask`,
 session open, high and low, `sessionVolume`, `cumulativeDelta`, `delta60s`, `tradeRate`, `lastTradeMs`,
@@ -258,11 +274,12 @@ and one whose send exceeds `Api:PublishTimeoutMs` is disconnected (D-32).
 **`DashboardSnapshot`** carries `root`, `seq`, `serverTimeMs`, `instrument`, `status`, `heat`, `bars`,
 `developingBar`, `minuteBars`, `developingMinute`, `minuteHeat`, `developingMinuteHeat`, `levelTouches`,
 `indicators`, `profiles`, `vwap`, `liquidity`, `ladder`, `overlay`, `sessionHigh`, `sessionLow`,
-`historyWatermarkMs`, `prints` and `orderFlow`. **`DashboardDelta`** carries the same fields except `instrument` and
+`historyWatermarkMs`, `prints`, `rangeZones` and `orderFlow`. **`DashboardDelta`** carries the same fields except `instrument` and
 `historyWatermarkMs`. In a delta, the series (`heat`, `bars`, `minuteBars`, `minuteHeat`, `prints`, indicator
 points, footprints, CVD points and signals) carry only what is new, and the client appends them; a gap repair may
 repeat an older minute bar or footprint, which replaces that bin (D-33). Every other field is the full current
-value.
+value. `rangeZones` is the full current list when any timeframe's zones changed since the previous publication, and
+null otherwise; the client keeps the zones it holds on null.
 
 | Field | Shape |
 |---|---|
@@ -275,12 +292,23 @@ value.
 | `prints[]` | `{sourceTimeMs, priceTicks, quantity, aggressor, sequence}`; live executions only, capped at `Engine:PrintCapacity` (D-34, FR-61) |
 | `vwap` | `{vwap, stdDev, volume, partial, anchor}` |
 | `liquidity` | FR-36–FR-40, with `quoteTimeMs` and `quoteStale` |
-| `ladder` | `{bids, asks}`, `Engine:LadderLevels` per side |
+| `ladder` | `{bids, asks}`, up to `Engine:LadderLevels` (default 40) per side; a shorter book is not padded |
 | `overlay` | the current overlay with its times, `expired` flag, levels and rationale, or null |
+| `rangeZones[]` | One entry per `Engine:Regime:TimeframesSeconds` value, `{timeframeSeconds, zones: [{startMs, endMs, lowTicks, highTicks}]}`, oldest zone first, empty when nothing has ranged. A zone is a maximal run of consecutive closed bars that FR-56's own classifier called Ranging, from the first bar's open to the last bar's close, between the lowest and highest trade in them. A bar of another class, or with no trades, ends it; the developing bar is never in one. A zone is dropped once its `endMs` is older than the retained minute bars. The client draws the zones of the layout's `rangeZoneTimeframe` and never classifies a regime (FR-75, D-62) |
 | `orderFlow` | `cvd`, `cvdPoints`, `footprints[]` and `developingFootprint` (cells per tick with bid volume, ask volume and imbalance flag), `signals[]`, `lastSignalId`, `icebergs`, `zones`, `unfinishedAuctions`, `keyLevels`, `tpo`, `footprintSeconds` |
 
 The TypeScript client validates every message against its schemas (`src/dashboard/src/api/schemas.ts`) and refuses
 one that does not match.
+
+## Interface E: Claude Messages API (consumed)
+
+`Api/Feedback/ClaudeFeedbackModel.cs` calls `POST {Feedback:BaseUrl}/v1/messages` through the official Anthropic C# SDK, once per feedback request and never on a timer (FR-74, D-61). The SDK sends the key from `Feedback:ApiKey` (or `ANTHROPIC_API_KEY`) as `Authorization: Bearer`.
+
+- **Request.** The model (`Feedback:Model`, default `claude-opus-5-5`); an output cap (`Feedback:MaxTokens`, 8,000, thinking included); one system text block holding the fixed prompt, marked for caching; one user message holding the plan and its `PlanMetrics` as JSON inside a data block; a JSON-schema output format and an effort level (`Feedback:Effort`, `medium`); and, when `Feedback:ServerFallback` is true (the default), the API's server-side fallback on a refusal. No sampling parameter is sent.
+- **Response.** `stop_reason` is checked before the content: a normal end is grounded (FR-74), a refusal or a truncation gives no feedback, and anything else is an invalid response. The reply's token use is counted against the monthly budget.
+- **Errors.** The SDK retries a 408, 409, 429 or 5xx up to `Feedback:MaxRetries` (2) inside the `Feedback:TimeoutSeconds` (60) deadline. What remains maps to a typed failure that carries none of the provider's body, and the caller still gets the metrics, never a 500. The one log line for a failed call names the exception's type and the HTTP status, never its message or body.
+- **Data sent.** The position's derived metrics only: no raw depth, no trades, no viewer, no key name. An overlay level's label is the one free text in it, and it reaches the model as a quoted string inside the data block (T-11).
+- **Not yet confirmed against the live API** (open question 14 below).
 
 ## Non-functional contract
 
@@ -290,6 +318,7 @@ one that does not match.
 - **Browser (D).** Deltas every `Api:PublishMs` (250 ms, clamped 50–5,000); one send in flight per connection; a
   send still running after `Api:PublishTimeoutMs` (1,000 ms) aborts the connection (D-32). The payload has no
   per-message schema version: a breaking change to D.2 ships the dashboard and the API together.
+- **Model (E).** One call per request, one request in flight per viewer, six a minute, a 60 s deadline and a monthly spend cap; a failed call degrades to metrics only and never touches ingestion (FR-74, FR-8).
 - **Agent (C).** Overlays are idempotent by (instrument, version); the newest valid version wins; expired overlays
   are flagged until replaced.
 - **Versioning.** The overlay body is versioned (`schemaVersion` 1); the hub and REST shapes are versioned with the
@@ -302,7 +331,7 @@ one that does not match.
 | 1 | Depth entitlement on the account for the CME, COMEX and NYMEX products | A |
 | 2 | Whether depth `Volume` is absolute or incremental, and which depth types are actually sent | A |
 | 3 | Whether a baseline arrives on subscribe and after reconnect, and whether 1,500 ms is enough to settle it | A |
-| 4 | How many depth levels per side are delivered | A |
+| 4 | How many depth levels per side are delivered. A live run (`LevelsPerSide` 50) saw MES, MCL and MNQ reach the request (MES asks 49) and MGC and SIL capped at 10 by the gateway; no maximum is documented, and the allowed range is now 5–200 | A, recorded |
 | 5 | Trade identifiers for de-duplication across reconnects | A |
 | 6 | Heartbeats during quiet markets (affects STALE) | A |
 | 7 | Concurrent-session limits on one account | A |
@@ -310,3 +339,4 @@ one that does not match.
 | 10 | Executed-volume-at-price backfill instead of bars expanded to prints (FR-25) | B |
 | 12 | Whether a traded-through depth decrement arrives before or after its trade print; the pulled-liquidity detector assumes after | A |
 | 13 | Overlay `version` across several publishers: the reference agent publishes epoch-millisecond versions, so another publisher using small integers is refused as stale | C |
+| 14 | Whether the live Messages API accepts the request as built: the server-side fallback with Claude Opus 5.5 and structured outputs, `Authorization: Bearer` for an API key, a system prompt long enough to cache, and the schema's `anyOf` with null | E |

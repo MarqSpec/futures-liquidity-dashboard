@@ -8,7 +8,7 @@ import { bookmapFrame, CENTER_FOLLOW_MS, LOCK_RELEASE_DRAG_PX } from "../domain/
 import { chartZoomIn } from "../domain/chartCursor.ts";
 import { defaultLayout, type LayoutSettings } from "../domain/layout.ts";
 import { fromSnapshot, type MarketState } from "../domain/merge.ts";
-import { defaultWindow, LIVE_EDGE_PAD, MIN_SPAN_MS, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
+import { defaultWindow, LIVE_EDGE_PAD, MIN_PRICE_ZOOM, MIN_SPAN_MS, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { BookmapView } from "./BookmapView.tsx";
 
@@ -409,6 +409,26 @@ describe("BookmapView price zoom and vertical drag", () => {
     expect(key.querySelector(".swatch")?.getAttribute("style") ?? "").not.toMatch(/width/);
   });
 
+  it("should keep panning past the old bound when zoomed in", () => {
+    const { stage } = renderView(() => undefined, market, { ...defaultWindow(5), priceZoom: MIN_PRICE_ZOOM });
+    const mid = plotMidY();
+    const visible = toNumber(priceAt(stage, 0)) - toNumber(priceAt(stage, mid * 2));
+    const before = toNumber(priceAt(stage, mid));
+    for (const [from, to] of [[100, 560], [100, 560], [100, 560], [100, 560]] as const) {
+      fireEvent.pointerDown(stage, { button: 0, clientX: 100, clientY: from, pointerId: 6 });
+      fireEvent.pointerMove(stage, { clientX: 100, clientY: to, pointerId: 6 });
+      fireEvent.pointerUp(stage, { clientX: 100, clientY: to, pointerId: 6 });
+    }
+    // The old bound stopped at 85% of the visible span from the fitted middle.
+    expect(toNumber(priceAt(stage, mid)) - before).toBeGreaterThan(visible * 0.85 * 2);
+    for (const [from, to] of [[560, 100], [560, 100], [560, 100], [560, 100], [560, 100], [560, 100], [560, 100], [560, 100]] as const) {
+      fireEvent.pointerDown(stage, { button: 0, clientX: 100, clientY: from, pointerId: 6 });
+      fireEvent.pointerMove(stage, { clientX: 100, clientY: to, pointerId: 6 });
+      fireEvent.pointerUp(stage, { clientX: 100, clientY: to, pointerId: 6 });
+    }
+    expect(before - toNumber(priceAt(stage, mid))).toBeGreaterThan(visible * 0.85 * 2);
+  });
+
   it("should center the last price and keep the current zoom", () => {
     let window = { ...defaultWindow(5), priceZoom: 0.5 };
     const { stage } = renderView((change) => {
@@ -424,6 +444,41 @@ describe("BookmapView price zoom and vertical drag", () => {
 
     expect(toNumber(priceAt(stage, mid))).toBeCloseTo(lastPrice(), 1);
     expect(window.priceZoom).toBe(0.5);
+  });
+
+  it("should center the last price at the narrowest zoom", () => {
+    const window = { ...defaultWindow(5), priceZoom: MIN_PRICE_ZOOM };
+    const { stage } = renderView(() => undefined, withPrint(anchorTicks), window);
+    const mid = plotMidY();
+    fireEvent.click(screen.getByRole("button", { name: "Center price" }));
+    expect(toNumber(priceAt(stage, mid))).toBeCloseTo(lastPrice(), 1);
+  });
+
+  it("should bring a last price beyond the old pan bound to the middle under Lock at the narrowest zoom", () => {
+    // A print 30% of the plot below the middle at zoom 1, which the old bound could not reach once zoomed in.
+    const probe = renderView();
+    const far = Math.round(toNumber(priceAt(probe.stage, plotMidY() * 1.6)) / market.instrument.tickSize);
+    cleanup();
+    vi.useFakeTimers();
+    try {
+      render(
+        <BookmapView
+          market={withPrint(far)}
+          layout={{ ...defaultLayout, centerPrice: true }}
+          viewWindow={{ ...defaultWindow(5), priceZoom: MIN_PRICE_ZOOM }}
+          onWindow={() => undefined}
+          onReading={() => undefined}
+        />,
+      );
+      const stage = screen.getByTitle(/Shift\+wheel zooms price/);
+      act(() => {
+        vi.advanceTimersByTime(CENTER_FOLLOW_MS * 20);
+      });
+      expect(toNumber(priceAt(stage, plotMidY()))).toBeCloseTo(lastPrice(), 1);
+      expect(lastPrice()).toBeCloseTo(far * market.instrument.tickSize, 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("should keep the last price centered while the lock is on, and release it on a vertical drag", () => {

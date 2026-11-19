@@ -20,6 +20,8 @@ export const hints = {
   displayBbo: "Draws the best bid and best ask as thin lines.",
   displayPnc: "Shows the failed-reclaim markers and the read-only trail guide, which is not an order.",
   displayKey: "Shows what each event marker color and shape means.",
+  displayRangeZones: "Shades each stretch where the product was ranging, between that stretch's high and low.",
+  displayRangeZoneBars: "Chooses whether 15-minute or 5-minute bars decide where the product was ranging, or hides the zones.",
   regime5m: "The market regime on 5-minute bars: trending up or down, ranging, or unclear.",
   regime15m: "The market regime on 15-minute bars: trending up or down, ranging, or unclear.",
 } as const;

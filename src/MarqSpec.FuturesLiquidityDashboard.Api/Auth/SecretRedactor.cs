@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace MarqSpec.FuturesLiquidityDashboard.Api.Auth;
 
 /// <summary>
-/// Strips viewer keys and bearer tokens out of text before it is written anywhere (CONVENTIONS.md §11).
+/// Strips viewer keys, bearer tokens and the Claude API key out of text before it is written anywhere (CONVENTIONS.md §11).
 /// The market hub has to carry <c>access_token</c> on the WebSocket URL, and the hosting request log includes the
 /// raw query string, so redaction is the boundary rather than a promise that the URL never holds the key.
 /// </summary>
@@ -20,6 +20,7 @@ public static partial class SecretRedactor
         var text = AccessToken().Replace(message, "access_token=[redacted]");
         text = ApiKeyHeader().Replace(text, "$1[redacted]");
         text = Bearer().Replace(text, "$1[redacted]");
+        text = AnthropicKey().Replace(text, "[redacted]");
         return Jwt().Replace(text, "[redacted]");
     }
 
@@ -33,6 +34,10 @@ public static partial class SecretRedactor
 
     [GeneratedRegex(@"(Authorization\s*[:=]\s*Bearer\s+)[^&\s]+", RegexOptions.IgnoreCase)]
     private static partial Regex Bearer();
+
+    // The Claude API key (CONVENTIONS.md §11): never logged, so a match here is a defect caught, not a format.
+    [GeneratedRegex(@"(?<![A-Za-z0-9_\-])sk-ant-[A-Za-z0-9_\-]{8,}")]
+    private static partial Regex AnthropicKey();
 
     // Header plus at most two segments, which may be empty (`alg:none`). A third segment such as `.example.com` stays.
     [GeneratedRegex(@"eyJ[A-Za-z0-9_\-]{10,}(?:\.[A-Za-z0-9_\-]*){0,2}")]

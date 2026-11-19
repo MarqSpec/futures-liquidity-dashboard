@@ -43,7 +43,7 @@ repository.
   11; it is build-time only and does not ship.
 
 Main packages: ASP.NET Core (minimal APIs, SignalR) and `Microsoft.AspNetCore.OpenApi`; OpenTelemetry with the
-Prometheus exporter; `MarqSpec.Client.ProjectX` for the TopstepX gateway; xUnit, FluentAssertions, FakeItEasy and
+Prometheus exporter; `MarqSpec.Client.ProjectX` for the TopstepX gateway; `Anthropic`, the official Claude SDK, for position feedback (D-61), used in place of a hand-written HTTP client for that one call; xUnit, FluentAssertions, FakeItEasy and
 `Microsoft.Extensions.TimeProvider.Testing` for tests. On the frontend: React, react-router, zod,
 `@microsoft/signalr`, the IBM Plex fonts, Capacitor, vitest and Testing Library.
 
@@ -204,7 +204,7 @@ Run these before a change is considered done; they are the checks a build server
   provider.
 - Permissions are `permission:scope` grants on each key ([`REQUIREMENTS.md`](REQUIREMENTS.md) §2). The key's `Name`
   is the only identity data, used for saved layouts and as an overlay's publisher, never as a metric label.
-- Every environment runs the same images by version. Development grants all four permissions anonymously; any
+- Every environment runs the same images by version. Development grants all five permissions anonymously; any
   other environment starts with no keys and no anonymous grants until you set a key's hash on the host.
 
 ## 13. Interface documentation

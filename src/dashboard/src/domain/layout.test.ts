@@ -12,11 +12,13 @@ import {
   withDetailChart,
   withIndicatorDockCollapsed,
   withPane,
+  withPosition,
   withRipsPreset,
   withSideSectionCollapsed,
   withSignal,
   withWatched,
 } from "./layout.ts";
+import { positionSchema } from "./position.ts";
 
 describe("toLayout", () => {
   it("should read the API's default layout when it is served", () => {
@@ -258,5 +260,40 @@ describe("isSignalOn", () => {
     expect(read.heatLowPercentile).toBe(10);
     expect(read.heatHighPercentile).toBe(90);
     expect(orderedHeatCutoffs(40, 40)).toEqual({ heatLowPercentile: 5, heatHighPercentile: 95 });
+  });
+});
+
+describe("withPosition", () => {
+  // — one position per root (REQUIREMENTS.md FR-72)
+  const position = positionSchema.parse({
+    side: "long",
+    entryType: "limit",
+    entryTicks: 20000,
+    quantity: 1,
+    stopTicks: 19990,
+    targets: [],
+    contractId: "MESZ26",
+    createdMs: 1,
+  });
+  const other = { ...position, contractId: "MCLF27" };
+
+  it("should set the root's position and keep every other root's when a position is placed", () => {
+    const start = withPosition(defaultLayout, "MCL", other);
+    const next = withPosition(start, "MES", position);
+
+    expect(next.positions).toEqual({ MCL: other, MES: position });
+    expect(start.positions).toEqual({ MCL: other });
+  });
+
+  it("should replace the root's position rather than add a second when one is placed again", () => {
+    const moved = { ...position, entryTicks: 20005 };
+
+    expect(withPosition(withPosition(defaultLayout, "MES", position), "MES", moved).positions).toEqual({ MES: moved });
+  });
+
+  it("should remove only the root's position when it is cleared", () => {
+    const both = withPosition(withPosition(defaultLayout, "MCL", other), "MES", position);
+
+    expect(withPosition(both, "MES", null).positions).toEqual({ MCL: other });
   });
 });

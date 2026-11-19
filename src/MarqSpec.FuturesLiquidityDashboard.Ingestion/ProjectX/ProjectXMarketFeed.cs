@@ -38,6 +38,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
     private readonly DepthDemand _depth;
     private readonly IngestBufferOptions _ingest;
     private readonly IngestMetrics? _metrics;
+    private readonly DepthWidthDiagnostic? _depthWidth;
     private readonly object _stateGate = new();
     private readonly Lock _historyGate = new();
     private long _streamRuns;
@@ -56,7 +57,8 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
         ILogger<ProjectXMarketFeed> logger,
         DepthDemand? depth = null,
         IngestBufferOptions? ingest = null,
-        IngestMetrics? metrics = null)
+        IngestMetrics? metrics = null,
+        DepthWidthDiagnostic? depthWidth = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _scopes = scopes ?? throw new ArgumentNullException(nameof(scopes));
@@ -66,6 +68,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
         _depth = depth ?? DepthDemand.Everything(time);
         _ingest = ingest ?? new IngestBufferOptions();
         _metrics = metrics;
+        _depthWidth = depthWidth;
     }
 
     /// <summary>The live ingest buffer while <see cref="StreamAsync"/> is running; null otherwise. Tests read its depth.</summary>
@@ -399,7 +402,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
         // Each stream run starts its epochs a million above the last, so a restarted stream never reuses an epoch, and
         // so never reuses a trade id the engine's de-duplication still remembers.
         var epochBase = EpochBase(Interlocked.Increment(ref _streamRuns));
-        var states = _gatewayIds.ToDictionary(g => g.Value, g => new ContractState(_byGatewayId[g.Value], epochBase), StringComparer.Ordinal);
+        var states = _gatewayIds.ToDictionary(g => g.Value, g => new ContractState(_byGatewayId[g.Value], epochBase, _depthWidth), StringComparer.Ordinal);
         var buffer = new MarketIngestBuffer(_ingest, _metrics);
         Pressure = buffer;
         var early = new EarlyCallbacks(_ingest.TradeCapacity, _ingest.DepthLevelsPerContract);
@@ -779,7 +782,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
     /// <summary>Per-contract connection epoch, sequence, settle buffer and tick-rule memory.</summary>
     internal static long EpochBase(long streamRun) => (streamRun - 1) * 1_000_000;
 
-    internal sealed class ContractState(InstrumentSpec spec, long epochBase = 0)
+    internal sealed class ContractState(InstrumentSpec spec, long epochBase = 0, DepthWidthDiagnostic? depthWidth = null)
     {
         private readonly SortedDictionary<long, long> _bids = [];
         private readonly SortedDictionary<long, long> _asks = [];
@@ -833,6 +836,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
             _settleAtMs = null;
             _bids.Clear();
             _asks.Clear();
+            depthWidth?.ClearBook(Spec.Root);
             _lastQuote = default;
             return _connected ? [Status(now, connected: true)] : [];
         }
@@ -890,6 +894,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
                     return [Reset(now, "gateway reset")];
                 case ProjectXEventMapper.DepthAction.Level when ProjectXEventMapper.Level(row, Spec) is { } level:
                     NoteExchange(row.Timestamp, now);
+                    depthWidth?.Note(Spec.Root, level.Side, level.PriceTicks, level.Quantity > 0, now);
                     if (Building)
                     {
                         var book = level.Side == BookSide.Bid ? _bids : _asks;
@@ -1045,6 +1050,7 @@ public sealed partial class ProjectXMarketFeed : IMarketDataFeed, IHistoricalTra
         {
             _bids.Clear();
             _asks.Clear();
+            depthWidth?.ClearBook(Spec.Root);
             _settleAtMs = now + settleMs;
             _resubscribeSettle = resubscribe;
         }

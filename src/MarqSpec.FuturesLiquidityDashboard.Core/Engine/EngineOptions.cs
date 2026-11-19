@@ -22,8 +22,17 @@ public sealed record EngineOptions
     /// <summary>STALE after this long without feed activity during an open session (REQUIREMENTS.md NFR-1).</summary>
     public int StaleAfterMs { get; init; } = 3000;
 
-    /// <summary>Price levels per side sent for the ladder.</summary>
-    public int LadderLevels { get; init; } = 20;
+    /// <summary>Least and most price levels per side sent for the ladder.</summary>
+    public const int MinLadderLevels = 5;
+
+    /// <summary>Upper bound, the same ceiling as <c>Feed:ProjectX:LevelsPerSide</c>.</summary>
+    public const int MaxLadderLevels = 200;
+
+    /// <summary>
+    /// Price levels per side sent for the ladder. A book with fewer prices is sent as it arrived:
+    /// nothing is padded and a missing price is not a zero row (REQUIREMENTS.md FR-11).
+    /// </summary>
+    public int LadderLevels { get; init; } = 40;
 
     /// <summary>Live prints kept for the tape (REQUIREMENTS.md FR-59, NFR-4). The oldest are dropped; nothing is invented.</summary>
     public int PrintCapacity { get; init; } = 4_096;

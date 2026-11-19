@@ -144,12 +144,20 @@ export function bookmapScales(
 const MIN_ON_SCREEN = 0.15;
 
 /**
- * Caps a vertical pan at about one fitted span, leaving `MIN_ON_SCREEN` of that span on the plot.
+ * Caps a vertical pan so the visible window can reach every fitted price and never leaves the plot blank. At the
+ * limit the window's edge passes the fitted edge by `1 - MIN_ON_SCREEN` of the visible span, so `MIN_ON_SCREEN`
+ * of the visible span, or the whole fitted range when that is narrower (zoom past about 6.7), holds fitted prices
+ * at every zoom: limit = visible * (1 - MIN_ON_SCREEN) + (fitted - visible) / 2.
+ * Zoomed in the second term widens the bound, so the whole fitted range can be reached. At zoom 1 it is zero,
+ * the old bound. Zoomed out it is negative and tightens the bound, which stays positive (0.35 * visible + fitted / 2).
+ * `fittedSpanTicks` omitted, not finite or not positive falls back to the visible span, the zoom 1 bound.
  * A non-finite shift or a span that is not positive does not move.
  */
-export function clampPriceShift(shiftTicks: number, spanTicks: number): number {
+export function clampPriceShift(shiftTicks: number, spanTicks: number, fittedSpanTicks: number = spanTicks): number {
   if (!Number.isFinite(shiftTicks) || !(spanTicks > 0)) return 0;
-  const limit = spanTicks * (1 - MIN_ON_SCREEN);
+  const fitted = Number.isFinite(fittedSpanTicks) && fittedSpanTicks > 0 ? fittedSpanTicks : spanTicks;
+  const reach = (fitted - spanTicks) / 2;
+  const limit = spanTicks * (1 - MIN_ON_SCREEN) + reach;
   return Math.min(limit, Math.max(-limit, shiftTicks));
 }
 
@@ -177,11 +185,11 @@ export function zoomPriceAbout(
   const span = Number.isFinite(fittedSpan) && fittedSpan > 0 ? fittedSpan : 0;
   const visibleSpan = span * nextZoom;
   if (span === 0 || !Number.isFinite(fractionFromTop)) {
-    return { priceZoom: nextZoom, shiftTicks: clampPriceShift(shiftTicks, visibleSpan) };
+    return { priceZoom: nextZoom, shiftTicks: clampPriceShift(shiftTicks, visibleSpan, span) };
   }
   const fraction = Math.min(1, Math.max(0, fractionFromTop));
   const rawShift = shiftTicks + span * (clampPriceZoom(priceZoom) - nextZoom) * (0.5 - fraction);
-  return { priceZoom: nextZoom, shiftTicks: clampPriceShift(rawShift, visibleSpan) };
+  return { priceZoom: nextZoom, shiftTicks: clampPriceShift(rawShift, visibleSpan, span) };
 }
 
 /** How often a locked price center steps toward the last trade, so a tick does not move the scale (REQUIREMENTS.md FR-67). */
@@ -210,11 +218,15 @@ export function pinchAxisFactor(startGapPx: number, gapPx: number): number {
  * The vertical shift that puts `priceTicks` on the midpoint of `range`. Zoom is the range's span and is not changed.
  * The result stays inside the pan bound, so a price far outside the fitted window cannot blank the plot.
  */
-export function centerPriceShift(range: { readonly low: number; readonly high: number }, priceTicks: number): number {
+export function centerPriceShift(
+  range: { readonly low: number; readonly high: number },
+  priceTicks: number,
+  fittedSpanTicks?: number,
+): number {
   const span = range.high - range.low;
   if (!(span > 0) || !Number.isFinite(priceTicks)) return 0;
   const mid = (range.low + range.high) / 2;
-  return clampPriceShift(priceTicks - mid, span);
+  return clampPriceShift(priceTicks - mid, span, fittedSpanTicks);
 }
 
 /**
@@ -230,14 +242,15 @@ export function stepCenterShift(current: number, target: number): number {
 
 /**
  * Moves a price range by `shiftTicks`. A positive shift shows higher prices. The span is unchanged, so price zoom
- * and the vertical pan stay independent (REQUIREMENTS.md FR-67). The shift is capped so part of this range stays visible.
+ * and the vertical pan stay independent (REQUIREMENTS.md FR-67). The shift is capped so part of the fitted range stays visible (`clampPriceShift`); pass `fittedSpanTicks` when this range is zoomed in on it.
  */
 export function shiftPriceRange(
   range: { readonly low: number; readonly high: number },
   shiftTicks: number,
+  fittedSpanTicks?: number,
 ): { readonly low: number; readonly high: number } {
   const span = range.high - range.low;
-  const shift = clampPriceShift(shiftTicks, span);
+  const shift = clampPriceShift(shiftTicks, span, fittedSpanTicks);
   return { low: range.low + shift, high: range.high + shift };
 }
 

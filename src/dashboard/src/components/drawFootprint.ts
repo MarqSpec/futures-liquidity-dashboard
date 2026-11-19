@@ -1,4 +1,4 @@
-import type { Footprint } from "../api/schemas.ts";
+import type { Footprint, RangeZone } from "../api/schemas.ts";
 import { composite, mostReadable, withAlpha } from "../design/color.ts";
 import { decodeFootprint, footprintPoc, type FootprintCell } from "../domain/footprint.ts";
 import { formatLocalMinute, formatQty, formatSigned, formatTicks, type TickSpec } from "../domain/format.ts";
@@ -8,6 +8,7 @@ import { canvasFonts } from "../lib/canvasFonts.ts";
 import { fnvHex, fnvStart, mix, mixNumbers } from "../lib/fnv.ts";
 import { AXIS_WIDTH, canvasTheme, colors, fonts, MONO, perTheme, themeColor, themed } from "../theme.ts";
 import { TIME_AXIS_HEIGHT, type MainChartGeometry } from "./drawMainChart.ts";
+import { drawRangeZones } from "./drawRangeZones.ts";
 
 
 /** Height of the per-bar delta row between the footprint's plot and its time axis. */
@@ -69,6 +70,8 @@ export interface FootprintModel {
   readonly lastTicks?: number | null;
   /** The provenance word laid faintly across the plot when the feed is not LIVE (REQUIREMENTS.md FR-4). */
   readonly watermark?: string | null;
+  /** Range zones shaded over the ground, behind the cells (REQUIREMENTS.md FR-75). */
+  readonly rangeZones?: readonly RangeZone[];
 }
 
 /** True when the bar overlaps a dropped-trade hole. An open hole has no end. */
@@ -145,6 +148,7 @@ export function footprintCacheKey(
     model.developing && model.developing.t + model.developing.d >= model.startMs && model.developing.t <= model.endMs ? 1 : 0,
     (model.missingRanges ?? []).map((range) => range.join(":")).join(","),
     (model.approximateRanges ?? []).map((range) => range.join(":")).join(","),
+    (model.rangeZones ?? []).map((zone) => `${zone.startMs}:${zone.endMs}:${zone.lowTicks}:${zone.highTicks}`).join(","),
   ]);
   let closed = 0;
   for (const bar of model.bars) {
@@ -234,6 +238,7 @@ function clipColumns(ctx: CanvasRenderingContext2D, layout: FootprintLayout): vo
 function drawChart(ctx: CanvasRenderingContext2D, layout: FootprintLayout, includeDeveloping: boolean): void {
   const bars = includeDeveloping && layout.developing ? [...layout.closed, layout.developing] : layout.closed;
   drawWatermark(ctx, layout);
+  drawRangeZones(ctx, layout.model.rangeZones ?? [], layout.time, layout.price, { x: 0, y: 0, w: layout.plotWidth, h: layout.plotHeight });
   drawGrid(ctx, layout);
   ctx.save();
   clipColumns(ctx, layout);

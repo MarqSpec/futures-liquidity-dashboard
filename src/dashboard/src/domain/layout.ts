@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { positionsSchema, storedPositionsSchema, type Position } from "./position.ts";
 import { signalKinds, type SignalKind } from "../api/schemas.ts";
 
 /**
@@ -69,6 +70,13 @@ export const detailCharts = ["footprint", "price"] as const;
 export type DetailChartId = (typeof detailCharts)[number];
 
 /**
+ * The bar timeframe, in seconds, whose range zones the price charts shade (REQUIREMENTS.md FR-75), or `off`. The same values as
+ * the API's `LayoutSettings.RangeZoneTimeframe`; five-minute bars by default, so zones show within the replayed history.
+ */
+export const rangeZoneTimeframes = ["900", "300", "off"] as const;
+export type RangeZoneTimeframe = (typeof rangeZoneTimeframes)[number];
+
+/**
  * The Detail side-column sections that fold to their heading, in the column's order (ARCHITECTURE.md D-49).
  * The same keys as the API's `LayoutSettings.KnownSideSections`. Every section starts open.
  */
@@ -106,6 +114,7 @@ export const paneIds = [
   "tpo",
   "ladder",
   "overlay",
+  "range-zones",
 ] as const;
 export type PaneId = (typeof paneIds)[number];
 
@@ -187,10 +196,12 @@ export const layoutSchema = z.object({
   indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).catch("volume"),
   indicatorDockCollapsed: z.boolean().catch(false),
   detailChart: z.enum(detailCharts).catch("footprint"),
+  rangeZoneTimeframe: z.enum(rangeZoneTimeframes).catch("300"),
   sideSectionsCollapsed: z.array(z.unknown()).transform(inColumnOrder).catch(() => []),
   showPriceLine: z.boolean().catch(true),
   hideValueArea: z.boolean().catch(false),
   emphasizeNodes: z.boolean().catch(false),
+  positions: positionsSchema.catch(() => ({})),
   panes: onlyKnown(knownPanes),
   signals: onlyKnown(knownSignals),
   watchlist: watchlistSchema.catch(() => [...defaultWatchlist]),
@@ -220,10 +231,12 @@ export const defaultLayout: LayoutSettings = {
   indicatorPane: "volume",
   indicatorDockCollapsed: false,
   detailChart: "footprint",
+  rangeZoneTimeframe: "300",
   sideSectionsCollapsed: [],
   showPriceLine: true,
   hideValueArea: false,
   emphasizeNodes: false,
+  positions: {},
   panes: {},
   signals: {},
   watchlist: [...defaultWatchlist],
@@ -260,10 +273,12 @@ export const storedLayoutSchema = z.object({
   indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).default("volume"),
   indicatorDockCollapsed: z.boolean().default(false),
   detailChart: z.enum(detailCharts).default("footprint"),
+  rangeZoneTimeframe: z.enum(rangeZoneTimeframes).default("300"),
   sideSectionsCollapsed: z.array(z.enum(sideSections)).transform(inColumnOrder).default(() => []),
   showPriceLine: z.boolean().default(true),
   hideValueArea: z.boolean().default(false),
   emphasizeNodes: z.boolean().default(false),
+  positions: storedPositionsSchema.default(() => ({})),
   panes: knownFlags(knownPanes).default(() => ({})),
   signals: knownFlags(knownSignals).default(() => ({})),
   watchlist: watchlistSchema.default(() => [...defaultWatchlist]),
@@ -328,6 +343,15 @@ export function withDetailChart(layout: LayoutSettings, chart: DetailChartId): L
     return layout;
   }
   return { ...layout, detailChart: chart };
+}
+
+/**
+ * The layout with `root`'s simulated position set, replaced or, with null, removed; every other root's is kept. One
+ * position per product root (REQUIREMENTS.md FR-72).
+ */
+export function withPosition(layout: LayoutSettings, root: string, position: Position | null): LayoutSettings {
+  const { [root]: _replaced, ...others } = layout.positions;
+  return { ...layout, positions: position ? { ...others, [root]: position } : others };
 }
 
 /**

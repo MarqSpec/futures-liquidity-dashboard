@@ -42,6 +42,7 @@ import {
   volumeStripBars,
   zoomPriceAbout,
 } from "./bookmap.ts";
+import { MAX_PRICE_ZOOM, MIN_PRICE_ZOOM } from "./viewWindow.ts";
 
 const spec = { tickSize: 0.25, priceDecimals: 2 };
 
@@ -122,6 +123,88 @@ describe("shiftPriceRange", () => {
     expect(shifted.low).toBeLessThan(140);
     expect(shifted.high).toBeGreaterThan(100);
     expect(shifted.low).toBeCloseTo(100 + limit);
+  });
+});
+
+describe("clampPriceShift with a fitted span", () => {
+  it("should reach the last price 50 ticks from the middle when 20 of 100 fitted ticks are visible", () => {
+    const limit = clampPriceShift(10_000, 20, 100);
+    expect(limit).toBeGreaterThanOrEqual(50);
+    expect(clampPriceShift(-10_000, 20, 100)).toBeLessThanOrEqual(-50);
+    expect(clampPriceShift(50, 20, 100)).toBe(50);
+  });
+
+  it("should keep 15 percent of the visible span on fitted prices at the limit, so the plot is never blank", () => {
+    const visible = 20;
+    const fitted = 100;
+    const up = clampPriceShift(10_000, visible, fitted);
+    // The window [up - 10, up + 10] about a fitted middle of 0 overlaps the fitted top at 50.
+    expect(50 - (up - visible / 2)).toBeCloseTo(visible * 0.15);
+    const down = clampPriceShift(-10_000, visible, fitted);
+    expect(down + visible / 2 - -50).toBeCloseTo(visible * 0.15);
+  });
+
+  it("should equal the old bound at zoom 1", () => {
+    expect(clampPriceShift(10_000, 40, 40)).toBeCloseTo(34);
+    expect(clampPriceShift(-10_000, 40, 40)).toBeCloseTo(-34);
+    expect(clampPriceShift(-10_000, 40)).toBeCloseTo(-34);
+  });
+
+  it.each([MIN_PRICE_ZOOM, 0.5, 1, 1.2, 1.5, 2, 6, 7, 10, MAX_PRICE_ZOOM])(
+    "should leave min(15 percent of the visible span, the whole fitted range) on fitted prices at zoom %s, both ways",
+    (zoom) => {
+      const fitted = 100;
+      const visible = fitted * zoom;
+      const up = clampPriceShift(1e9, visible, fitted);
+      const down = clampPriceShift(-1e9, visible, fitted);
+      expect(up).toBeGreaterThan(0);
+      expect(down).toBe(-up);
+      // The overlap of the window [shift - visible / 2, shift + visible / 2] with the fitted range [-50, 50].
+      const overlap = (shift: number) => Math.min(shift + visible / 2, fitted / 2) - Math.max(shift - visible / 2, -fitted / 2);
+      const expected = Math.min(0.15 * visible, fitted);
+      expect(overlap(up)).toBeCloseTo(expected);
+      expect(overlap(down)).toBeCloseTo(expected);
+    },
+  );
+
+  it("should fall back to the visible-span bound when the fitted span is not finite", () => {
+    expect(clampPriceShift(10_000, 20, Number.NaN)).toBeCloseTo(17);
+  });
+});
+
+describe("shiftPriceRange and centerPriceShift with a fitted span", () => {
+  it("should put the fitted top on screen after a huge upward shift of a zoomed-in range", () => {
+    const moved = shiftPriceRange({ low: -10, high: 10 }, 10_000, 100);
+    expect(moved.high).toBeGreaterThanOrEqual(50);
+    expect(moved.low).toBeLessThanOrEqual(50);
+  });
+
+  it("should center a last price near the fitted edge at the narrowest zoom", () => {
+    const fittedSpan = 100;
+    const visible = fittedSpan * MIN_PRICE_ZOOM;
+    const range = { low: -visible / 2, high: visible / 2 };
+    for (const price of [-49, 49, 0]) {
+      const shift = centerPriceShift(range, price, fittedSpan);
+      const moved = shiftPriceRange(range, shift, fittedSpan);
+      expect((moved.low + moved.high) / 2).toBeCloseTo(price);
+    }
+  });
+});
+
+describe("zoomPriceAbout keeps the pan inside the fitted-span bound", () => {
+  it("should keep the fitted top in view when zooming in from the top pan limit", () => {
+    // Zoom 0.2 of 100 fitted ticks is at its top limit (57). One notch in about the middle must not snap it back to 16 * 0.85.
+    const next = zoomPriceAbout(0.2, 57, 100, 0.5, 0.8);
+    expect(next.priceZoom).toBeCloseTo(0.16);
+    expect(next.shiftTicks).toBeCloseTo(55.6);
+    expect(next.shiftTicks + 100 * next.priceZoom / 2).toBeGreaterThan(50);
+  });
+
+  it("should leave 15 percent of the visible span on fitted prices when zooming out from the top pan limit", () => {
+    const next = zoomPriceAbout(1.5, 102.5, 100, 1, 2 / 1.5);
+    expect(next.priceZoom).toBeCloseTo(2);
+    expect(next.shiftTicks).toBeCloseTo(120);
+    expect(50 - (next.shiftTicks - 200 / 2)).toBeCloseTo(0.15 * 200);
   });
 });
 

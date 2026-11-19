@@ -6,7 +6,7 @@ are cited from the code.
 ## 1. Scraping
 
 The API serves `/metrics` in Prometheus format. Point any Prometheus at it every 15 s or so. Outside Development,
-`/metrics` and `/health/ready` require an authenticated caller (D-30): the scraper sends `X-Api-Key` with a key that
+`/metrics`, `/health/ready` and `/api/diagnostics/depth-width` require an authenticated caller (D-30): the scraper sends `X-Api-Key` with a key that
 holds any grant, or the API sets `Auth__ProtectDiagnostics=false` when the scraper cannot and the port is not
 public. `/health/live` never requires a key. Compose runs the API in Development, so a local scrape needs no key.
 These endpoints expose instrument status and counters, never prices, orders or personal data.
@@ -38,8 +38,18 @@ ingest and publish instruments use a fixed `lane` or `kind` label, never a contr
 | `fld_publish_in_flight` | gauge | Delta sends currently waiting on a browser |
 | `fld_publish_skipped_total` | counter | Deltas not delivered because that browser was still taking the previous send |
 | `fld_publish_aborted_total` | counter | Browser connections aborted after `Api:PublishTimeoutMs` |
+| `fld_depth_levels_per_side` | gauge | The configured `Feed:ProjectX:LevelsPerSide` (default 50, allowed 5–200). Not a received count |
+| `fld_depth_ladder_levels` | gauge | The configured `Engine:LadderLevels` (default 40, allowed 5–200) |
+| `fld_depth_received_bids_max{instrument}`, `fld_depth_received_asks_max{instrument}` | gauge | The most distinct bid (ask) prices with size the market hub has sent since the process started, before the `LevelsPerSide` trim |
+| `fld_depth_received_bids_typical{instrument}`, `fld_depth_received_asks_typical{instrument}` | gauge | The lower median of distinct bid (ask) prices, one sample a second, over the last 256 samples |
+| `fld_depth_received_bids{instrument}`, `fld_depth_received_asks{instrument}` | gauge | Distinct bid (ask) prices in the untrimmed book now |
+| `fld_depth_received_capped{instrument}` | gauge | 1 once a side hit the 256-price store, so the maximum is a lower bound |
+| `fld_feedback_requests_total{provider,outcome}` | counter | Position feedback requests (FR-74). `provider` is `claude` or `mock`; `outcome` is `ok`, `refusal`, `timeout`, `error`, `invalid-response`, `over-budget`, `throttled` or `unavailable` |
+| `fld_feedback_duration_milliseconds{provider,outcome}` | histogram | How long a model call took, for the requests that made one |
+| `fld_feedback_tokens_total{kind}` | counter | Tokens the Claude calls used; `kind` is `input`, `output`, `cache-write` or `cache-read`. The mock counts none |
+| `fld_feedback_spend_usd`, `fld_feedback_budget_usd` | gauge | This UTC month's Claude spend in US dollars, counted in memory since the process started (a restart resets it), and `Feedback:MonthlyBudgetUsd` (NFR-9) |
 
-Labels stay bounded: `instrument`, `lane`, `kind`, never contract ids, key names or raw paths.
+Labels stay bounded: `instrument`, `lane`, `kind`, `provider`, `outcome`, never contract ids, key names, prompts, replies or raw paths.
 
 ## 3. Feed health and readiness
 

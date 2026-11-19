@@ -85,6 +85,7 @@ export function mainChartDrawKey(
   hash = mixTrail(hash, model);
   hash = mixOverlay(hash, model);
   hash = mixFootprint(hash, model);
+  hash = mixList(hash, (model.rangeZones ?? []).map((zone) => [zone.startMs, zone.endMs, zone.lowTicks, zone.highTicks]));
   return fnvHex(hash);
 }
 

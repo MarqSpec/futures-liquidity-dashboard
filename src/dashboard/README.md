@@ -153,6 +153,19 @@ or one trends while the other ranges, and **Mixed** when either is unclear, warm
 dashboard does not know reads as warming, and a regime entry it cannot read is skipped, so the server can add
 regime kinds later. Detail shows the selected product's two regimes in the status bar, from the same polled list.
 
+### Range zones
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-75, ARCHITECTURE.md D-62.)* The snapshot and its deltas carry, per regime
+timeframe, the stretches the server's own classifier called Ranging (`rangeZones`; a delta carries them only when they
+changed). Detail's price and footprint charts and Order Flow shade the zones of the layout's `rangeZoneTimeframe`
+(`300`, the default, so zones show within the replayed history, `900` or `off`) as a box in the `range-zone` token at `RANGE_ZONE_FILL_ALPHA` (0.12), from half a
+tick under the zone's low to half a tick over its high, with a hairline top and bottom edge and no label or tooltip
+(`components/drawRangeZones.ts`). The box sits behind the price marks (over the price chart's opaque heat ground,
+behind Order Flow's heat), is clipped to the plot, pans and zooms with the chart and never changes the price fit.
+Inside Order Flow's warmup band only the edges are drawn. Detail's Layers panel has the **Range zones** toggle (the
+`range-zones` pane flag, on by default) and the **bars** select; Order Flow's Display menu has the same two as buttons.
+Both are saved on the layout, so the tabs always agree. The dashboard never classifies a regime itself.
+
 ## Products, the watchlist and depth
 
 The product list is not fixed in the dashboard: it comes from `GET /api/instruments` (seeded by the route loader,
@@ -192,6 +205,46 @@ forming bar is not announced again until the numbers have settled. On the footpr
 column, whatever the candle interval, and the readout is that column's volume and delta and the volume traded at the bid
 and at the ask at the focused price, the cell's own two numbers, never the resting depth (D-55, [a separate change]).
 
+## Simulated position
+
+*(2026-11-18, [a separate change], REQUIREMENTS.md FR-72, ARCHITECTURE.md D-58.)* One simulated position per product, saved on the
+layout and shown on Detail (price and footprint) and Order Flow. **Alt-click** the plot to place a limit entry at the
+clicked tick: a long at or below the last price, a short above it. A plain click or drag still pans; an Alt-press does
+not. The entry, stop and each target are lines across the plot, each labelled **SIMULATED** with its price on the price
+axis; drag one to move it on the tick grid. A drop that breaks FR-72's rules springs back and the reason shows on the
+plot and in the ticket. The ticket above the chart (`PositionTicket.tsx`) edits side, type, quantity, entry, stop and
+targets from the keyboard (until the entry fills, below): Tab between fields, Enter or leaving a field applies it, Escape restores it. **Place at last
+price** places one without a pointer, **Clear** removes it, and **Feedback** (below) appears only when the server offers it. The
+rules and the edits live in `domain/positionEdit.ts`, the lines in `PositionLines.tsx`, and `hooks/usePosition.ts`
+saves each change through the layout's `update`, which marks `positions` as changed (D-57).
+
+**Tracking** *(2026-11-18, [a separate change], REQUIREMENTS.md FR-72, ARCHITECTURE.md D-59.)* The browser paper-tracks the position
+against the live prints it already receives, only while its product is on show. `domain/positionTrack.ts` holds the
+rules: a limit fills only on a print strictly through its price, a market entry at the next print, the stop at the first
+print at or through it, targets on a print through them with scale-out. The ticket shows the state, each exit with its own
+P&L, and the open, realized and total P&L in ticks, currency and R (R is fixed at the fill, stored as `fill.riskTicks`).
+Warmup prints and prints while the feed is DEGRADED or otherwise untrackable fill nothing, and the ticket says "not
+tracked since HH:MM CT" across a gap. A per-product heartbeat in `localStorage` (`futures-liquidity-dashboard.position-beat.<root>`)
+lets a switch between Detail and Order Flow carry on from the last print, and shows the time the tab was closed as not
+tracked. Once the entry fills, side, type, quantity and entry are locked, a filled target cannot be edited, a live target
+cannot move to or inside a filled one, and a closed position can only be cleared.
+
+**Feedback** *(2026-11-19, [a separate change], REQUIREMENTS.md FR-74, ARCHITECTURE.md D-61.)* The ticket's **Feedback** button asks the server for commentary on
+the position (`POST /api/plans/feedback/{root}`, once per press, disabled while it runs, never retried or refreshed).
+**It is hidden by default**: no button and no panel exist until `GET /api/plans/feedback/status` (read once per product on
+show) says `available`, or says only that the month's budget is spent. No key, disabled, a 403 (no `request-feedback`
+grant) or no answer all leave it hidden (`domain/feedback.ts` `feedbackOffered`, the maintainer's ruling of 2026-11-18).
+The panel (`FeedbackPanel.tsx`) sits **to the right of the chart**, under it below 900 px: a header with the as-of time in
+CT, a summary, one section per leg (Entry, Stop, Targets) with
+its fill likelihood as text, the assessment, the suggestion (`→ price, why`) and a `cites:` line whose every metric shows
+its value from the same response (`citedValues`), then the risks, how many claims the server removed (`droppedCites`, shown as "claims removed"). The advisory label and, whenever the reply's provider is `mock`, a **MOCK** label beside it sit in a footer outside the scrolling answer, so both stay in view. Each suggestion is also a dashed
+**ghost line** on the chart (`PositionLines.tsx`); one click, or the Apply button in the panel (the keyboard way), sends the
+move through `moveLine`, so FR-72, the filled-position rules and the scale-out reorder rule can refuse it with the reason.
+Feedback goes **stale** (a banner, ghosts removed, Apply disabled) once the position changes or the last price moves more
+than 1 ATR from the as-of price (`staleReason`); it never refreshes on its own. The other states: loading, metrics only
+(with the reason), over budget (spend and cap, button kept) and rate-limited. `hooks/useFeedback.ts` holds the state and
+`api/feedbackClient.ts` the two calls (a 70 s deadline, 429 and 503 bodies read into `FeedbackRefusedError`).
+
 ## Measuring
 
 Open the page with `?perf=1` to record frame times (a requestAnimationFrame loop) and the main chart's draw times,
@@ -204,7 +257,7 @@ and latency of `GET /api/instruments`. It is opt-in. It is not a CI gate.
 
 ## Layout settings
 
-The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`) and the pane and signal toggles are saved to
+The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`), the range-zone bars (`rangeZoneTimeframe`) and the pane and signal toggles are saved to
 `PUT /api/layouts/me` and, on every change, to this browser's localStorage. The API keeps one revision counter per
 viewer in memory for the process. A PUT is accepted only when its `revision` is that counter; the response carries
 the next value. A mismatch answers 409 with the layout still stored. When that document was saved, the page shows

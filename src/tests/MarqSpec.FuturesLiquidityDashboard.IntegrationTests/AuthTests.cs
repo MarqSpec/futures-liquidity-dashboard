@@ -72,6 +72,20 @@ public sealed class AuthTests(ProductionDashboardFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task PlanMetrics_ShouldBeForbidden_WhenTheKeyHasNoViewDashboardGrantForThatInstrument()
+    {
+        var plan = new { side = "long", entryType = "limit", entryTicks = 20000, quantity = 1, stopTicks = 19990, contractId = "x", createdMs = 1 };
+
+        // The agent reads context everywhere but views nothing; the viewer views MES only.
+        using var agent = Client(ProductionDashboardFactory.AgentKey);
+        using var agentResponse = await agent.PostAsJsonAsync(new Uri("/api/plans/metrics/MES", UriKind.Relative), plan);
+        using var viewer = Client(ProductionDashboardFactory.EsViewerKey);
+        using var otherResponse = await viewer.PostAsJsonAsync(new Uri("/api/plans/metrics/MGC", UriKind.Relative), plan);
+
+        (agentResponse.StatusCode, otherResponse.StatusCode).Should().Be((HttpStatusCode.Forbidden, HttpStatusCode.Forbidden));
+    }
+
+    [Fact]
     public void NoKeys_OutsideDevelopment_StopStartup()
     {
         using var keyless = new KeylessProductionFactory();

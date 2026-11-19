@@ -73,7 +73,7 @@ export function usePriceControls(options: PriceControlsOptions): PriceActions {
     const center = () => {
       const scene = optionsRef.current.scene();
       if (!scene || scene.anchorTicks == null) return;
-      optionsRef.current.setShift(centerPriceShift(scene.zoomed, scene.anchorTicks));
+      optionsRef.current.setShift(centerPriceShift(scene.zoomed, scene.anchorTicks, scene.fittedSpan));
     };
     return {
       isLockHeld: () => held.current,
@@ -106,7 +106,7 @@ export function usePriceControls(options: PriceControlsOptions): PriceActions {
       if (!held.current) return;
       const scene = optionsRef.current.scene();
       if (!scene || scene.anchorTicks == null) return;
-      const next = stepCenterShift(scene.shiftTicks, centerPriceShift(scene.zoomed, scene.anchorTicks));
+      const next = stepCenterShift(scene.shiftTicks, centerPriceShift(scene.zoomed, scene.anchorTicks, scene.fittedSpan));
       if (next !== scene.shiftTicks) optionsRef.current.setShift(next);
     }, CENTER_FOLLOW_MS);
     return () => window.clearInterval(id);

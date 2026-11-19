@@ -5,6 +5,8 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
 using MarqSpec.FuturesLiquidityDashboard.Core.Levels;
 using MarqSpec.FuturesLiquidityDashboard.Core.Overlays;
+using MarqSpec.FuturesLiquidityDashboard.Core.Plans;
+using MarqSpec.FuturesLiquidityDashboard.Ingestion.Hosting;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace MarqSpec.FuturesLiquidityDashboard.Api.Endpoints;
@@ -96,6 +98,30 @@ public static class DashboardEndpoints
                 : TypedResults.Forbid();
         });
 
+        // Computes and returns; stores nothing. The route avoids order words so the FR-6 guard still holds (D-60).
+        api.MapPost("/plans/metrics/{instrument}", Results<Ok<PlanMetrics>, ValidationProblem, NotFound, ForbidHttpResult> (
+            string instrument, SimulatedPosition body, ClaimsPrincipal user, EngineRegistry registry, OverlayStore overlays, IngestionState ingestion) =>
+        {
+            if (!TryEngine(instrument, registry, out var engine))
+            {
+                return TypedResults.NotFound();
+            }
+
+            if (!Permissions.Has(user, Permissions.ViewDashboard, engine.Spec.Root))
+            {
+                return TypedResults.Forbid();
+            }
+
+            var errors = ValidatePlan(body, engine, ingestion);
+            if (errors.Count > 0)
+            {
+                return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["position"] = [.. errors] });
+            }
+
+            var market = engine.PlanMarket(overlays.Current(engine.Spec.Root));
+            return TypedResults.Ok(PlanMetricsCalculator.Compute(ToPlan(body), market));
+        });
+
         api.MapGet("/overlays/{instrument}", Results<Ok<OverlayRequest>, NoContent, NotFound, ForbidHttpResult> (
             string instrument, ClaimsPrincipal user, EngineRegistry registry, OverlayStore overlays) =>
         {
@@ -131,15 +157,15 @@ public static class DashboardEndpoints
                 : TypedResults.UnprocessableEntity(new ProblemDetailsBody(result.Rejection.ToString(), result.Message));
         });
 
-        api.MapGet("/layouts/me", Results<Ok<LayoutDocument>, ForbidHttpResult> (ClaimsPrincipal user, LayoutStore layouts) =>
+        api.MapGet("/layouts/me", Results<Ok<LayoutDocument>, ForbidHttpResult> (ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion) =>
             HasAny(user, Permissions.ViewDashboard)
-                ? TypedResults.Ok(layouts.Get(user.Identity?.Name ?? string.Empty))
+                ? TypedResults.Ok(layouts.Get(user.Identity?.Name ?? string.Empty).WithActivePositions(registry, ingestion.HistoryLoaded))
                 : TypedResults.Forbid());
 
         // indicatorMinutes is a viewer preference. The engines keep every timeframe; the hub sends one connection
         // the series it subscribed with. A save must not retune shared engine state.
         api.MapPut("/layouts/me", Results<Ok<LayoutDocument>, Conflict<LayoutDocument>, ValidationProblem, ForbidHttpResult> (
-            LayoutWrite body, ClaimsPrincipal user, LayoutStore layouts) =>
+            LayoutWrite body, ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion) =>
         {
             if (body.Layout is null)
             {
@@ -160,7 +186,8 @@ public static class DashboardEndpoints
             }
 
             var saved = layouts.Save(userName, layout, body.Revision);
-            return saved.Applied ? TypedResults.Ok(saved.Document) : TypedResults.Conflict(saved.Document);
+            var served = saved.Document.WithActivePositions(registry, ingestion.HistoryLoaded);
+            return saved.Applied ? TypedResults.Ok(served) : TypedResults.Conflict(served);
         });
 
         return app;
@@ -169,7 +196,31 @@ public static class DashboardEndpoints
     /// <summary>A rejection reason and message, for an overlay the store refused.</summary>
     public sealed record ProblemDetailsBody(string Reason, string Message);
 
-    private static bool TryEngine(string instrument, EngineRegistry registry, out InstrumentEngine engine)
+    private const string PlanPath = "Position";
+
+    /// <summary>The FR-72 rules plus the active contract, each message naming its field under <c>Position</c>.</summary>
+    internal static List<string> ValidatePlan(SimulatedPosition body, InstrumentEngine engine, IngestionState ingestion)
+    {
+        var errors = body.Validate(PlanPath).ToList();
+        // Before ingestion resolves the contracts the registry holds placeholder ids, as on the layout read (FR-72).
+        if (ingestion.HistoryLoaded && !string.Equals(body.ContractId, engine.Spec.ContractId, StringComparison.Ordinal))
+        {
+            errors.Add($"{PlanPath}.ContractId is not the active contract of {engine.Spec.Root}.");
+        }
+
+        return errors;
+    }
+
+    // Validated first: every price is a whole number of ticks at most 1,000,000,000 from zero. ToInt64 throws rather than wraps.
+    internal static PlanSpec ToPlan(SimulatedPosition position) => new(
+        position.Side == "long",
+        position.EntryType == "market",
+        position.EntryTicks is { } entry ? decimal.ToInt64(entry) : null,
+        position.Quantity,
+        decimal.ToInt64(position.StopTicks),
+        [.. position.Targets.Select(t => new PlanTarget(decimal.ToInt64(t.PriceTicks), t.Quantity))]);
+
+    internal static bool TryEngine(string instrument, EngineRegistry registry, out InstrumentEngine engine)
     {
         engine = null!;
         return InstrumentCatalog.TryParse(instrument, out var root) && registry.TryGet(root, out engine);

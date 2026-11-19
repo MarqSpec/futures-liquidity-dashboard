@@ -325,6 +325,12 @@ public sealed record DashboardSnapshot
     /// <summary>Executions at or before this time came from history (warmup), not from the live session.</summary>
     public long? HistoryWatermarkMs { get; init; }
 
+    /// <summary>
+    /// The range zones of each regime timeframe over the retained bars, oldest first (REQUIREMENTS.md FR-75): one set per
+    /// <c>Engine:Regime:TimeframesSeconds</c> entry, empty when nothing has ranged.
+    /// </summary>
+    public IReadOnlyList<RangeZoneSetDto> RangeZones { get; init; } = [];
+
     public required OrderFlowDto OrderFlow { get; init; }
 }
 
@@ -379,6 +385,12 @@ public sealed record DashboardDelta
     public long? SessionHigh { get; init; }
 
     public long? SessionLow { get; init; }
+
+    /// <summary>
+    /// Every timeframe's range zones, as on the snapshot, when any changed since the previous publication; null when
+    /// none did, so the client keeps the zones it holds (REQUIREMENTS.md FR-75).
+    /// </summary>
+    public IReadOnlyList<RangeZoneSetDto>? RangeZones { get; init; }
 
     public required OrderFlowDto OrderFlow { get; init; }
 }

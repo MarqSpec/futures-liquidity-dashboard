@@ -132,6 +132,45 @@ public sealed class LayoutStoreTests
     }
 
     [Fact]
+    public void Validate_ShouldRejectTheRangeZoneTimeframe_WhenItIsNot900Or300OrOff()
+    {
+        new LayoutSettings { RangeZoneTimeframe = "900" }.Validate().Should().BeEmpty();
+        new LayoutSettings { RangeZoneTimeframe = "300" }.Validate().Should().BeEmpty();
+        new LayoutSettings { RangeZoneTimeframe = "off" }.Validate().Should().BeEmpty();
+        foreach (var bad in new[] { "60", "Off", "900 ", "", "1800" })
+        {
+            new LayoutSettings { RangeZoneTimeframe = bad }.Validate()
+                .Should().Contain(error => error.Contains("RangeZoneTimeframe"), $"'{bad}' is not a range-zone timeframe");
+        }
+
+        new LayoutSettings { RangeZoneTimeframe = null! }.Validate()
+            .Should().Contain(error => error.Contains("RangeZoneTimeframe"));
+    }
+
+    [Fact]
+    public void PreservingStoredOmissions_ShouldKeepTheRangeZoneTimeframe_WhenTheJsonOmitsTheField()
+    {
+        new LayoutSettings().RangeZoneTimeframe.Should().Be("300", "five-minute bars drive the zones by default, so they show within the replayed history");
+        using var fresh = JsonDocument.Parse(JsonSerializer.Serialize(new LayoutSettings(), Json));
+        fresh.RootElement.GetProperty("rangeZoneTimeframe").GetString().Should().Be("300");
+        var stored = new LayoutSettings { RangeZoneTimeframe = "off" };
+
+        var omitted = JsonSerializer.Deserialize<LayoutSettings>("""{"instrument":"MGC"}""", Json);
+        omitted!.PreservingStoredOmissions(stored).RangeZoneTimeframe.Should().Be("off", "an older client that omits the field must not reset it");
+
+        var explicitDefault = JsonSerializer.Deserialize<LayoutSettings>("""{"rangeZoneTimeframe":"300"}""", Json);
+        explicitDefault!.PreservingStoredOmissions(stored).RangeZoneTimeframe.Should().Be("300", "an explicit default replaces the stored value");
+    }
+
+    [Fact]
+    public void Validate_ShouldAcceptTheRangeZonesLayer_WhenTheLayersToggleIsSaved()
+    {
+        new LayoutSettings { Panes = new() { ["range-zones"] = false } }.Validate().Should().BeEmpty();
+        new LayoutSettings { Panes = new() { ["range-zone"] = false } }.Validate()
+            .Should().Contain(error => error.Contains("range-zone"));
+    }
+
+    [Fact]
     public void Validate_ShouldRejectTheDetailChart_WhenItIsNeitherFootprintNorPrice()
     {
         new LayoutSettings { DetailChart = "footprint" }.Validate().Should().BeEmpty();

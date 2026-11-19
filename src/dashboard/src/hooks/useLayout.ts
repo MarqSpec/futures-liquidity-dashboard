@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getLayout, LayoutConflictError, putLayout } from "../api/client.ts";
+import { getLayout, LayoutConflictError, putLayout, type LayoutPut } from "../api/client.ts";
 import { defaultLayout, type LayoutSettings } from "../domain/layout.ts";
 import { readStoredLayout, reconcileLayout } from "../domain/layoutPersistence.ts";
 import { readStored, writeStored } from "../lib/storage.ts";
@@ -32,8 +32,14 @@ function copyLayout(layout: LayoutSettings): LayoutSettings {
     panes: { ...layout.panes },
     signals: { ...layout.signals },
     watchlist: [...layout.watchlist],
+    positions: structuredClone(layout.positions),
     sideSectionsCollapsed: [...layout.sideSectionsCollapsed],
   };
+}
+
+function withoutPositions(layout: LayoutSettings): LayoutPut {
+  const { positions: _kept, ...rest } = layout;
+  return rest;
 }
 
 function sameFlags(left: Readonly<Record<string, boolean>>, right: Readonly<Record<string, boolean>>): boolean {
@@ -68,6 +74,7 @@ function sameLayout(left: LayoutSettings, right: LayoutSettings): boolean {
     left.showPriceLine === right.showPriceLine &&
     left.hideValueArea === right.hideValueArea &&
     left.emphasizeNodes === right.emphasizeNodes &&
+    JSON.stringify(left.positions) === JSON.stringify(right.positions) &&
     sameFlags(left.panes, right.panes) &&
     sameFlags(left.signals, right.signals) &&
     left.watchlist.length === right.watchlist.length &&
@@ -88,6 +95,9 @@ export function useLayout(): LayoutState {
   const revision = useRef(storedNow()?.revision ?? 0);
   const layoutRef = useRef(layout);
   const dirty = useRef(false);
+  // A save sends `positions` only when the viewer changed them, so the server's omit-keeps-stored rule protects any
+  // position a filtered or lenient read hid (REQUIREMENTS.md FR-72, ARCHITECTURE.md D-57).
+  const positionsDirty = useRef(false);
   const citedWrites = useRef<{ revision: number; layout: LayoutSettings }[]>([]);
 
   useEffect(() => {
@@ -107,6 +117,7 @@ export function useLayout(): LayoutState {
             return;
           }
           dirty.current = false;
+          positionsDirty.current = false;
           revision.current = served.revision;
           layoutRef.current = served.layout;
           remember(served.revision, served.layout, false);
@@ -120,6 +131,8 @@ export function useLayout(): LayoutState {
         setLayout(choice.layout);
         if (choice.push) {
           dirty.current = true;
+          positionsDirty.current =
+            !served.saved || JSON.stringify(choice.layout.positions) !== JSON.stringify(served.layout.positions);
           remember(choice.revision, choice.layout, true);
           setSource("browser");
         } else {
@@ -150,6 +163,7 @@ export function useLayout(): LayoutState {
       const adopt = (current: LayoutSettings, nextRevision: number): void => {
         revision.current = nextRevision;
         dirty.current = false;
+        positionsDirty.current = false;
         layoutRef.current = current;
         remember(nextRevision, current, false);
         setLayout(current);
@@ -164,7 +178,8 @@ export function useLayout(): LayoutState {
           setLayout(copyLayout(layoutRef.current));
         }
       };
-      putLayout({ revision: sent, layout: snapshot }, controller.signal).then(
+      const sendPositions = positionsDirty.current;
+      putLayout({ revision: sent, layout: sendPositions ? snapshot : withoutPositions(snapshot) }, controller.signal).then(
         (saved) => {
           if (saved.revision > revision.current) {
             revision.current = saved.revision;
@@ -219,6 +234,9 @@ export function useLayout(): LayoutState {
 
   const update = useCallback((change: (current: LayoutSettings) => LayoutSettings) => {
     const next = change(layoutRef.current);
+    if (JSON.stringify(next.positions) !== JSON.stringify(layoutRef.current.positions)) {
+      positionsDirty.current = true;
+    }
     dirty.current = true;
     layoutRef.current = next;
     remember(revision.current, next, true);

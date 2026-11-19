@@ -67,6 +67,23 @@ public sealed class InstrumentEngineTests
     }
 
     [Fact]
+    public void Snapshot_ShouldListOnlyReceivedLevels_WhenTheBookIsShallowerThanTheLadder()
+    {
+        // MGC and SIL arrive with 10 prices. A 40-level ladder must not pad the missing ones.
+        var engine = new InstrumentEngine(InstrumentCatalog.MES, EngineOptions.Default with { LadderLevels = 40 }, TestData.Calendar());
+        engine.Apply(TestData.Status(T0, connected: true));
+        var bids = Enumerable.Range(0, 10).Select(i => new BookLevel(Px - 1 - i, 3 + i)).ToList();
+        var asks = Enumerable.Range(0, 10).Select(i => new BookLevel(Px + i, 4 + i)).ToList();
+        engine.Apply(TestData.Snapshot(T0, bids, asks, levelsPerSide: 50));
+
+        var ladder = engine.Snapshot(60, null).Ladder;
+
+        ladder.Bids.Should().HaveCount(10);
+        ladder.Asks.Should().HaveCount(10);
+        ladder.Bids.Concat(ladder.Asks).Should().OnlyContain(row => row.Count == 2 && row[1] > 0);
+    }
+
+    [Fact]
     public void Apply_ShouldDropDepthUpdates_WhenTheBookIsUnknown()
     {
         var engine = NewEngine();

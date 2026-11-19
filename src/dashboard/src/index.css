@@ -1744,6 +1744,399 @@ p {
   color: var(--on-surface-variant);
 }
 
+/* The simulated position (REQUIREMENTS.md FR-72, ARCHITECTURE.md D-58): a ticket above the chart and draggable lines over the
+   plot. The layer passes every press it does not own to the chart beneath; only a line's thin strip takes one. */
+.position-ticket {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface-low);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+}
+
+.position-badge {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--status-simulated);
+  border-radius: var(--radius-xs);
+  color: var(--status-simulated);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.position-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  color: var(--on-surface-muted);
+}
+
+.position-field,
+.position-target {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.position-field input,
+.position-field select {
+  height: 26px;
+  font-family: var(--font-mono);
+}
+
+.position-field input:disabled {
+  color: var(--on-surface-muted);
+}
+
+.position-notice {
+  margin: 0;
+  color: var(--danger);
+}
+
+/* Paper tracking (D-59): the state, the exits, the P&L and the time not tracked. */
+.position-track {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  font-family: var(--font-mono);
+}
+
+.position-state {
+  color: var(--on-surface);
+  font-weight: 600;
+}
+
+.position-pnl {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
+.position-gap {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--status-degraded);
+  border-radius: var(--radius-xs);
+  color: var(--status-degraded);
+}
+
+.position-layer {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-chart-overlay);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.position-line {
+  position: absolute;
+  height: 9px;
+  margin-top: -4px;
+  cursor: ns-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.position-line::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed currentColor;
+}
+
+.position-line-entry {
+  color: var(--primary);
+}
+
+.position-line-entry::after {
+  border-top-style: solid;
+}
+
+.position-line-stop {
+  color: var(--danger);
+}
+
+.position-line-target {
+  color: var(--support);
+}
+
+.position-line-fill {
+  color: var(--primary);
+}
+
+.position-line-done::after {
+  border-top-style: dotted;
+}
+
+.position-line-fixed {
+  cursor: default;
+  pointer-events: none;
+}
+
+.position-line-dragging::after {
+  border-top-width: 2px;
+}
+
+.position-line-label {
+  position: absolute;
+  bottom: 6px;
+  left: var(--space-4);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--scrim-chart);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.position-tag {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  background: var(--scrim-tooltip);
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+  transform: translateY(-50%);
+}
+
+.position-offscreen {
+  position: absolute;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--scrim-chart);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.position-layer-notice {
+  position: absolute;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 2px var(--space-8);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--scrim-tooltip);
+  box-shadow: var(--elevation-2);
+  color: var(--on-surface);
+  font-size: 12px;
+}
+
+/* Position feedback (REQUIREMENTS.md FR-74, NFR-8): the panel sits to the right of the chart, beside the ticket, and
+   under it on a narrow screen. Closed, the wrappers add no box, so the chart lays out as it always did. */
+.feedback-beside,
+.feedback-main {
+  display: contents;
+}
+
+.feedback-beside--open {
+  display: flex;
+  flex: 5 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
+.feedback-beside--open > .feedback-main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.feedback-dock {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--outline-variant);
+  background: var(--surface-low);
+}
+
+/* The panel's content never sets the row's height: it scrolls inside the box the chart gives it, above the footer. */
+.feedback-scroll {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.feedback-panel {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: var(--space-8);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+}
+
+.feedback-panel:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.feedback-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-8);
+}
+
+.feedback-head h3,
+.feedback-leg h4,
+.feedback-risks h4 {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 13px;
+}
+
+.feedback-close {
+  margin-left: auto;
+}
+
+.feedback-asof {
+  font-family: var(--font-mono);
+}
+
+.feedback-mock {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--status-simulated);
+  border-radius: var(--radius-xs);
+  color: var(--status-simulated);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.feedback-stale {
+  display: block;
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0 var(--space-4);
+  border-left: 3px solid var(--status-degraded);
+  color: var(--status-degraded);
+}
+
+.feedback-state {
+  display: block;
+}
+
+.feedback-summary,
+.feedback-leg p,
+.feedback-state {
+  margin: var(--space-4) 0;
+}
+
+.feedback-leg,
+.feedback-risks {
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--outline-variant);
+}
+
+.feedback-pill {
+  padding: 0 var(--space-4);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  color: var(--on-surface-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.feedback-pill[data-likelihood="high"] {
+  color: var(--support);
+}
+
+.feedback-pill[data-likelihood="medium"] {
+  color: var(--status-degraded);
+}
+
+.feedback-suggestion {
+  font-family: var(--font-mono);
+}
+
+.feedback-cites {
+  color: var(--on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.feedback-cites b {
+  color: var(--on-surface);
+  font-weight: 600;
+}
+
+.feedback-risks ul,
+.feedback-metrics {
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-16);
+}
+
+/* The advisory label and MOCK stay in view under the scrolling answer. */
+.feedback-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8) var(--space-8);
+  border-top: 1px solid var(--outline-variant);
+  background: var(--surface-low);
+}
+
+.feedback-foot .feedback-mock {
+  margin-top: var(--space-4);
+}
+
+.feedback-advisory {
+  flex: 1 1 0;
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  border-left: 3px solid var(--status-simulated);
+  background: var(--surface-lowest);
+  color: var(--on-surface);
+}
+
+/* A suggestion as a ghost of the line it would move: dashed, faint, and the one thing a click applies. */
+.position-ghost {
+  position: absolute;
+  height: 9px;
+  margin-top: -4px;
+  cursor: pointer;
+  opacity: 0.75;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.position-ghost::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 0;
+  left: 0;
+  border-top: 2px dashed currentColor;
+}
+
+.position-ghost:hover {
+  opacity: 1;
+}
+
 .tooltip {
   position: absolute;
   z-index: var(--z-chart-overlay);
@@ -2319,6 +2712,36 @@ legend {
 
 /* A narrow window: the side panels go under the charts. */
 @media (max-width: 900px) {
+  .feedback-beside--open {
+    flex: 0 0 auto;
+    flex-direction: column;
+  }
+
+  /* The chart keeps its own minimum height, and the panel takes the room under it. */
+  .feedback-beside--open > .feedback-main {
+    flex: 0 0 auto;
+  }
+
+  /* The page scrolls past it, so the whole panel, advisory label included, is on screen. */
+  .feedback-dock {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--outline-variant);
+    border-left: 0;
+  }
+
+  .feedback-scroll {
+    flex: 0 0 auto;
+  }
+
+  .feedback-panel {
+    position: static;
+  }
+
+  .feedback-foot {
+    position: sticky;
+    bottom: 0;
+  }
+
   .app {
     height: auto;
   }
@@ -2348,6 +2771,12 @@ legend {
   .chart-column {
     height: 90vh;
     overflow: hidden;
+  }
+
+  /* With the feedback panel open the column grows to hold it under the chart instead of clipping it. */
+  .chart-column:has(> .feedback-beside--open) {
+    height: auto;
+    overflow: visible;
   }
 
   .side-column {

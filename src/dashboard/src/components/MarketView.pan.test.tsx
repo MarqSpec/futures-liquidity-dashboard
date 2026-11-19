@@ -92,9 +92,9 @@ function wheel(x: number, y: number, deltaY = -40, shiftKey = false): WheelEvent
   return event;
 }
 
-function Probe({ crosshair }: { readonly crosshair: CrosshairStore }) {
+function Probe({ crosshair, startZoom = initial.priceZoom }: { readonly crosshair: CrosshairStore; readonly startZoom?: number }) {
   const [market, setMarket] = useState<MarketState>(base);
-  const [view, setView] = useState<ViewWindow>(initial);
+  const [view, setView] = useState<ViewWindow>({ ...initial, priceZoom: startZoom });
   return (
     <>
       <output data-testid="span">{view.spanMs}</output>
@@ -273,6 +273,31 @@ describe.each([
     fireEvent.doubleClick(canvas);
     fireEvent(canvas, pointer("pointermove", anchorX, anchorY));
     expect(crosshair.get().priceTicks).toBeCloseTo(before, 4);
+  });
+
+  it("should keep panning past the old bound when zoomed in, in both directions", () => {
+    const crosshair = createCrosshairStore();
+    render(<Probe crosshair={crosshair} startZoom={MIN_PRICE_ZOOM} />);
+    const canvas = overlay();
+    const priceAtY = (y: number): number => {
+      fireEvent(canvas, pointer("pointermove", anchorX, y));
+      const ticks = crosshair.get().priceTicks;
+      if (ticks === null) throw new Error("the pointer is not on the plot");
+      return ticks;
+    };
+    const before = priceAtY(anchorY);
+    const ticksPerPx = (before - priceAtY(anchorY + 90)) / 90;
+    // The plot is under 400 px tall, so this is above the visible span in ticks. The old bound was 85% of it.
+    const oldBound = 0.85 * ticksPerPx * 400;
+    const drag = (dy: number) => {
+      fireEvent(canvas, pointer("pointerdown", anchorX, anchorY));
+      fireEvent(canvas, pointer("pointermove", anchorX, anchorY + dy));
+      fireEvent(canvas, pointer("pointerup", anchorX, anchorY + dy));
+    };
+    for (let i = 0; i < 6; i += 1) drag(200);
+    expect(priceAtY(anchorY) - before).toBeGreaterThan(2 * oldBound);
+    for (let i = 0; i < 12; i += 1) drag(-200);
+    expect(before - priceAtY(anchorY)).toBeGreaterThan(2 * oldBound);
   });
 
   it("should fit the price again when the instrument returns without another drag", () => {

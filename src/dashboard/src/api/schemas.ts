@@ -290,6 +290,12 @@ export const overlaySchema = z.object({
   qualityFlags: z.array(z.string()),
 });
 
+/** A stretch FR-56 called Ranging on closed bars (REQUIREMENTS.md FR-75): its time and the lowest and highest trade, in ticks. */
+export const rangeZoneSchema = z.object({ startMs: long, endMs: long, lowTicks: long, highTicks: long });
+
+/** One regime timeframe's range zones, oldest first. */
+export const rangeZoneSetSchema = z.object({ timeframeSeconds: z.number().int().positive(), zones: z.array(rangeZoneSchema) });
+
 const publication = {
   root: z.string(),
   seq: long,
@@ -319,9 +325,17 @@ export const snapshotSchema = z.object({
   ...publication,
   instrument: instrumentInfoSchema,
   historyWatermarkMs: long.nullish(),
+  rangeZones: z.array(rangeZoneSetSchema).default([]),
 });
 
-export const deltaSchema = z.object(publication);
+export const deltaSchema = z.object({
+  ...publication,
+  /** Every timeframe's zones when any changed since the last publication; null when none did. */
+  rangeZones: z
+    .array(rangeZoneSetSchema)
+    .nullish()
+    .transform((v) => v ?? null),
+});
 
 /** How a product's price is moving on one bar timeframe; a trend this client does not know reads as Unknown. */
 export const regimeTrends = ["Unknown", "Ranging", "Transition", "TrendingUp", "TrendingDown"] as const;
@@ -440,6 +454,8 @@ export type Overlay = z.infer<typeof overlaySchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type Delta = z.infer<typeof deltaSchema>;
 export type Regime = z.infer<typeof regimeSchema>;
+export type RangeZone = z.infer<typeof rangeZoneSchema>;
+export type RangeZoneSet = z.infer<typeof rangeZoneSetSchema>;
 export type MarketSummary = z.infer<typeof marketSummarySchema>;
 export type InstrumentSummary = z.infer<typeof instrumentSummariesSchema>[number];
 export type WatchlistResult = z.infer<typeof watchlistResultSchema>;

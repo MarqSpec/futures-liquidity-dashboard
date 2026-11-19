@@ -42,6 +42,7 @@
   --aggressor-buy: var(--up);
   --aggressor-sell: var(--down);
   --warmup: #686e79;
+  --range-zone: #7d7562;
   --node-hvn: #ffd54f;
   --node-lvn: #4fc3f7;
   --node-neutral: #8d97a8;
@@ -150,6 +151,7 @@
   --aggressor-buy: var(--up);
   --aggressor-sell: var(--down);
   --warmup: #6d737b;
+  --range-zone: #756d58;
   --node-hvn: #946b00;
   --node-lvn: #0277bd;
   --node-neutral: #697385;

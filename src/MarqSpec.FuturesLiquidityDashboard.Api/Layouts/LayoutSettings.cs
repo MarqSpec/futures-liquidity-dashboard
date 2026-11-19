@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
+using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
 
 namespace MarqSpec.FuturesLiquidityDashboard.Api.Layouts;
 
@@ -15,6 +17,7 @@ public sealed record LayoutSettings
     {
         "ema10", "ema13", "ema24", "ema48", "ema200", "vwap", "rsi14", "macd", "atr14",
         "heatmap", "footprint", "cvd", "profile-session", "profile-1h", "profile-4h", "profile-5d", "tpo", "ladder", "overlay",
+        "range-zones",
     };
 
     public static IReadOnlySet<string> KnownSignals { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -246,6 +249,22 @@ public sealed record LayoutSettings
         init => Set(nameof(DetailChart), ref _detailChart, value);
     }
 
+    private string _rangeZoneTimeframe = "300";
+
+    /// <summary>
+    /// The bar timeframe whose range zones the price charts shade (REQUIREMENTS.md FR-75): <c>300</c> (5 minutes, the default, so
+    /// zones appear inside the replayed history), <c>900</c> (15 minutes) or <c>off</c>. Any other value, including null,
+    /// is refused. A PUT that omits the property keeps the stored value; an explicit value, including <c>300</c>,
+    /// replaces it. Detail and Order Flow both read
+    /// this; the <c>range-zones</c> pane flag is the Layers toggle beside it.
+    /// </summary>
+    [RegularExpression("^(900|300|off)$")]
+    public string RangeZoneTimeframe
+    {
+        get => _rangeZoneTimeframe;
+        init => Set(nameof(RangeZoneTimeframe), ref _rangeZoneTimeframe, value);
+    }
+
     /// <summary>
     /// When true, the indicator dock shows only its tab strip and the chart above it takes the freed height
     /// (REQUIREMENTS.md FR-22, ARCHITECTURE.md D-39). Default false. An explicit null is refused. A PUT that omits the
@@ -279,6 +298,20 @@ public sealed record LayoutSettings
     }
 
     private List<string> _sideSectionsCollapsed = [];
+
+    /// <summary>
+    /// The viewer's simulated positions by product root, one per root (REQUIREMENTS.md FR-72, UC-20; ARCHITECTURE.md D-57).
+    /// A chart annotation, never an order (REQUIREMENTS.md FR-6). Default none. A null map or an invalid position is refused,
+    /// naming the field. A PUT that omits the property keeps the stored positions; an explicit map, including an empty
+    /// one, replaces them. <see cref="LayoutDocument.WithActivePositions"/> drops a stale-contract position on read.
+    /// </summary>
+    public Dictionary<string, SimulatedPosition> Positions
+    {
+        get => _positions;
+        init => Set(nameof(Positions), ref _positions, value);
+    }
+
+    private Dictionary<string, SimulatedPosition> _positions = [];
 
     /// <summary>True when this value set <see cref="IndicatorPane"/>, including an explicit default. Not part of the JSON document.</summary>
     [JsonIgnore]
@@ -348,6 +381,7 @@ public sealed record LayoutSettings
     {
         null => null,
         Dictionary<string, bool> flags => new Dictionary<string, bool>(flags, StringComparer.Ordinal),
+        Dictionary<string, SimulatedPosition> positions => new Dictionary<string, SimulatedPosition>(positions, StringComparer.Ordinal),
         List<string> list => list.ToList(),
         _ => value,
     };
@@ -410,6 +444,11 @@ public sealed record LayoutSettings
             errors.Add("DetailChart must be footprint or price.");
         }
 
+        if (RangeZoneTimeframe is not ("900" or "300" or "off"))
+        {
+            errors.Add("RangeZoneTimeframe must be 900, 300 or off.");
+        }
+
         if (SideSectionsCollapsed is null)
         {
             errors.Add("SideSectionsCollapsed must be a list, not null.");
@@ -419,6 +458,8 @@ public sealed record LayoutSettings
             errors.AddRange(SideSectionsCollapsed.Where(k => k is null || !KnownSideSections.Contains(k))
                 .Select(k => $"SideSectionsCollapsed names an unknown section '{k}'."));
         }
+
+        errors.AddRange(PositionRules.Validate(Positions));
 
         errors.AddRange(Panes.Keys.Where(k => !KnownPanes.Contains(k)).Select(k => $"Unknown pane '{k}'."));
         errors.AddRange(Signals.Keys.Where(k => !KnownSignals.Contains(k)).Select(k => $"Unknown signal '{k}'."));
@@ -438,6 +479,34 @@ public sealed record LayoutDocument
     public long Revision { get; init; }
 
     public LayoutSettings Layout { get; init; } = new();
+
+    /// <summary>
+    /// This document as a reader sees it: a position whose contract is not the root's active one is left out
+    /// (REQUIREMENTS.md FR-72). <paramref name="activeContract"/> gives a root's active contract id, or null for a root with none.
+    /// The stored document is not changed.
+    /// </summary>
+    public LayoutDocument WithActivePositions(Func<string, string?> activeContract)
+    {
+        ArgumentNullException.ThrowIfNull(activeContract);
+        var kept = Layout.Positions
+            .Where(p => string.Equals(activeContract(p.Key), p.Value.ContractId, StringComparison.Ordinal))
+            .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+        return this with { Layout = Layout with { Positions = kept } };
+    }
+
+    /// <summary>
+    /// The registry's view of <see cref="WithActivePositions(Func{string, string?})"/>. Until ingestion has replaced the
+    /// registry with the feed's resolved contracts (<paramref name="contractsResolved"/> false), the registry holds the
+    /// catalog's placeholder contract ids, so no position can be judged stale and every stored one is served.
+    /// A root with no engine, or a different active contract, is dropped once the contracts are resolved (REQUIREMENTS.md FR-72).
+    /// </summary>
+    public LayoutDocument WithActivePositions(EngineRegistry registry, bool contractsResolved)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        return contractsResolved
+            ? WithActivePositions(root => InstrumentRoot.TryParse(root, out var parsed) && registry.TryGet(parsed, out var engine) ? engine.Spec.ContractId : null)
+            : this;
+    }
 }
 
 /// <summary>

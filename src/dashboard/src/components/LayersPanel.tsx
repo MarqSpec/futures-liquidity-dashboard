@@ -1,5 +1,6 @@
 import type { IndicatorSeries } from "../domain/merge.ts";
 import { nextHeatCutoffs, withRipsPreset, type LayoutSettings, type PaneId } from "../domain/layout.ts";
+import { RangeZoneControls } from "./RangeZoneControls.tsx";
 import { SidePanel, type SideFold } from "./SidePanel.tsx";
 
 /** Props of the layer toggles. */
@@ -169,6 +170,7 @@ export function LayersPanel({ isPaneOn, onToggle, indicators, layout, onReading,
           ))}
         </fieldset>
       ))}
+      <RangeZoneControls layout={layout} onReading={onReading} variant="layers" />
     </SidePanel>
   );
 }

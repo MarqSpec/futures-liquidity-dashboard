@@ -11,6 +11,7 @@ import type {
   Overlay,
   Profile,
   LevelTouch,
+  RangeZoneSet,
   Print,
   Signal,
   Snapshot,
@@ -64,6 +65,8 @@ export interface MarketState {
   readonly sessionHigh: number | null;
   readonly sessionLow: number | null;
   readonly historyWatermarkMs: number | null;
+  /** Each regime timeframe's range zones (REQUIREMENTS.md FR-75), replaced whenever a delta carries them. */
+  readonly rangeZones: readonly RangeZoneSet[];
   readonly orderFlow: MarketOrderFlow;
 }
 
@@ -202,6 +205,7 @@ export function fromSnapshot(snapshot: Snapshot, historyMinutes: number, receive
     sessionHigh: snapshot.sessionHigh ?? null,
     sessionLow: snapshot.sessionLow ?? null,
     historyWatermarkMs: snapshot.historyWatermarkMs ?? null,
+    rangeZones: snapshot.rangeZones,
     orderFlow: {
       ...snapshot.orderFlow,
       footprints: trimBefore(snapshot.orderFlow.footprints, fromMs, byT),
@@ -287,6 +291,7 @@ export function applyDelta(state: MarketState, delta: Delta, receivedAtMs: numbe
     overlay: delta.overlay ?? null,
     sessionHigh: delta.sessionHigh ?? null,
     sessionLow: delta.sessionLow ?? null,
+    rangeZones: delta.rangeZones ?? state.rangeZones,
     orderFlow: {
       ...flow,
       footprints: trimBefore(upsertByTime(state.orderFlow.footprints, flow.footprints), fromMs, byT),
