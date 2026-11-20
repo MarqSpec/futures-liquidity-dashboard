@@ -39,6 +39,15 @@ public sealed record EngineOptions
 
     public IndicatorSettings Indicators { get; init; } = IndicatorSettings.Default;
 
+    /// <summary>
+    /// The slowest indicator source timeframe warmup history seeds: five minutes. The 15-minute set is not seeded and
+    /// warms from live bars (ARCHITECTURE.md D-68).
+    /// </summary>
+    public const int SeededIndicatorSeconds = 300;
+
+    /// <summary>Open-market minutes of history that seed the slowest EMA on <see cref="SeededIndicatorSeconds"/> bars: 1,005 for EMA 200.</summary>
+    public int IndicatorWarmupMinutes => Indicators.EmaWarmupMinutes(SeededIndicatorSeconds);
+
     /// <summary>Order-flow detector thresholds and switches (REQUIREMENTS.md FR-41–FR-52).</summary>
     public OrderFlowOptions OrderFlow { get; init; } = OrderFlowOptions.Default;
 

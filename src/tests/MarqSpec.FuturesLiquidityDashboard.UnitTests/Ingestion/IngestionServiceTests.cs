@@ -8,6 +8,7 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
 using MarqSpec.FuturesLiquidityDashboard.Core.Market;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
+using MarqSpec.FuturesLiquidityDashboard.Core.Sessions;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Feeds;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -397,10 +398,13 @@ public sealed class IngestionServiceTests
             && call.GetArgument<LogLevel>(0) == LogLevel.Warning
             && call.GetArgument<EventId>(1).Name == "ClockAheadRejected");
 
+    // reference: REQUIREMENTS.md FR-17; ARCHITECTURE.md D-68
     [Fact]
-    public async Task Prepare_ShouldLoadEnoughHistoryForTheSlowestRegime_ForEveryProductAtOnce()
+    public async Task Prepare_ShouldLoadEnoughHistoryToSeedTheFiveMinuteEma200_ForEveryProductAtOnce()
     {
-        // Mid-session, a few hours after the open: the 15-minute regime needs 28 bars (7 h), more than the 4 h minimum.
+        // Mon 22:00 CT, five hours into the session. EMA 200 on five-minute bars needs 1,005 open minutes (201 bars,
+        // the last still forming): 300 in this session and 705 before Monday's 16:00 CT close, so the window opens at
+        // Mon 04:15 CT (17 h 45 min), further than the 15-minute regime's 7 h and the 4 h minimum.
         var now = TestData.SessionOpen.AddHours(5);
         var registry = new EngineRegistry([InstrumentRoot.ES, InstrumentRoot.GC, InstrumentRoot.CL], EngineOptions.Default, TestData.Calendar());
         var history = new RecordingHistory(waitForSibling: true);
@@ -417,7 +421,7 @@ public sealed class IngestionServiceTests
         await service.PrepareAsync(CancellationToken.None);
 
         history.Windows.Should().HaveCount(3);
-        history.Windows.Values.Should().OnlyContain(w => w.ToMs - w.FromMs == (long)TimeSpan.FromHours(7).TotalMilliseconds);
+        history.Windows.Values.Should().OnlyContain(w => w.ToMs - w.FromMs == (long)new TimeSpan(17, 45, 0).TotalMilliseconds);
         history.MaxConcurrent.Should().BeGreaterThan(1);
     }
 
@@ -442,6 +446,117 @@ public sealed class IngestionServiceTests
         var window = history.Windows[InstrumentRoot.ES];
         (window.ToMs - window.FromMs).Should().BeLessThan((long)TimeSpan.FromHours(7).TotalMilliseconds);
     }
+
+    // reference: REQUIREMENTS.md FR-17, FR-56; ARCHITECTURE.md D-68
+    [Fact]
+    public void WarmupWindow_ShouldKeepTheCurrentRule_WhenItReachesFurtherThanTheEmaWarmup()
+    {
+        // EMA 10 on five-minute bars needs 55 minutes; the 15-minute regime still needs 7 h.
+        var now = TestData.SessionOpen.AddHours(5);
+        var engine = EngineOptions.Default with { Indicators = EngineOptions.Default.Indicators with { Emas = [new(10)] } };
+
+        var window = IngestionService.WarmupWindow(now, new FeedOptions(), engine, TestData.Calendar());
+
+        window.Should().Be((now.AddHours(-7).ToUnixTimeMilliseconds(), now.ToUnixTimeMilliseconds(), true));
+    }
+
+    [Fact]
+    public void WarmupWindow_ShouldLeaveOutTheEmaWarmup_WhenWarmRegimesIsOff()
+    {
+        // MinHistoryHours alone: the session open, five hours back, is further than half an hour.
+        var now = TestData.SessionOpen.AddHours(5);
+
+        var window = IngestionService.WarmupWindow(
+            now, new FeedOptions { MinHistoryHours = 0.5, WarmRegimes = false }, EngineOptions.Default, TestData.Calendar());
+
+        window.Should().Be((TestData.SessionOpenMs, now.ToUnixTimeMilliseconds(), true));
+    }
+
+    [Fact]
+    public void WarmupWindow_ShouldCapAt24HoursAndSaySo_WhenTheRegimeNeedsMore()
+    {
+        // A one-hour regime timeframe needs 28 bars, 28 h.
+        var now = TestData.Epoch;
+        var engine = EngineOptions.Default with { Regime = EngineOptions.Default.Regime with { TimeframesSeconds = [3600] } };
+
+        var window = IngestionService.WarmupWindow(now, new FeedOptions(), engine, TestData.Calendar());
+
+        window.Should().Be((now.AddHours(-IngestionService.MaxHistoryHours).ToUnixTimeMilliseconds(), now.ToUnixTimeMilliseconds(), false));
+    }
+
+    [Fact]
+    public void WarmupWindow_ShouldCapAt24HoursAndSaySo_WhenTheEmaCannotBeSeededInside24Hours()
+    {
+        // Sun 18:00 CT: one open hour since the weekly open, and the Friday session is more than 24 h back.
+        var now = new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero);
+
+        var window = IngestionService.WarmupWindow(now, new FeedOptions(), EngineOptions.Default, TestData.Calendar());
+
+        window.Should().Be((now.AddHours(-24).ToUnixTimeMilliseconds(), now.ToUnixTimeMilliseconds(), false));
+    }
+
+    [Fact]
+    public async Task Prepare_ShouldLogTheCapOnce_WhenTheWarmupNeedsMoreThan24Hours()
+    {
+        var now = new DateTimeOffset(2026, 11, 16, 0, 0, 0, TimeSpan.Zero);
+        var logger = A.Fake<ILogger<IngestionService>>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+        await NewWarmupService(now, logger, new RecordingHistory(), [InstrumentRoot.ES, InstrumentRoot.GC], out _).PrepareAsync(CancellationToken.None);
+
+        WarmupCappedLogs(logger).Should().Be(1, "the cap is one fact about the window every product shares");
+    }
+
+    [Fact]
+    public async Task Prepare_ShouldNotLogTheCap_WhenTheWarmupFitsInside24Hours()
+    {
+        var logger = A.Fake<ILogger<IngestionService>>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+        await NewWarmupService(TestData.Epoch, logger, new RecordingHistory(), [InstrumentRoot.ES], out _).PrepareAsync(CancellationToken.None);
+
+        WarmupCappedLogs(logger).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Prepare_ShouldSeedTheFiveMinuteEma200AndLeaveTheFifteenWarming_WhenEveryOpenMinuteTraded()
+    {
+        // Tue 08:00 CT: the window crosses the Monday 16:00-17:00 CT break, which has no bars.
+        var now = TestData.Epoch;
+        var history = new EveryOpenMinuteHistory(TestData.Calendar());
+        var service = NewWarmupService(now, NullLogger<IngestionService>.Instance, history, [InstrumentRoot.ES], out var registry);
+
+        await service.PrepareAsync(CancellationToken.None);
+        registry.TryGet(InstrumentRoot.ES, out var engine).Should().BeTrue();
+
+        // Read straight after history, before any live event closes the bar holding the last print.
+        var ema200 = engine!.Snapshot(60, null).Indicators.Where(i => i.Id == "ema200").ToDictionary(i => i.Tf);
+        ema200[60].Ready.Should().BeTrue();
+        ema200[300].Ready.Should().BeTrue("1,005 open minutes are 200 closed five-minute bars and the forming one");
+        ema200[300].Seen.Should().Be(200);
+        ema200[900].Ready.Should().BeFalse("the fifteen-minute set is not seeded from history (D-68) and keeps its FR-17 flag");
+        ema200[900].Seen.Should().BeLessThan(200);
+    }
+
+    private static IngestionService NewWarmupService(
+        DateTimeOffset now, ILogger<IngestionService> logger, IHistoricalTradeSource history, InstrumentRoot[] roots, out EngineRegistry registry)
+    {
+        registry = new EngineRegistry(roots, EngineOptions.Default, TestData.Calendar());
+        return new IngestionService(
+            new OneEventFeed(),
+            registry,
+            Options.Create(new FeedOptions()),
+            TestData.Calendar(),
+            new IngestionState { FeedName = "test" },
+            new FakeTimeProvider(now),
+            logger,
+            history);
+    }
+
+    private static int WarmupCappedLogs(ILogger logger) =>
+        Fake.GetCalls(logger).Count(call =>
+            call.Method.Name == nameof(ILogger.Log)
+            && call.GetArgument<EventId>(1).Name == "WarmupCapped");
 
     private static (IngestionService Service, IngestionState State, FakeTimeProvider Time) NewService(
         IInstrumentResolver resolver,
@@ -702,6 +817,25 @@ public sealed class IngestionServiceTests
         {
             yield return TestData.Status(TestData.EpochMs, connected: true);
             await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+    }
+
+    /// <summary>One synthetic print in every minute the exchange is open, as a minute-bar history returns them.</summary>
+    private sealed class EveryOpenMinuteHistory(ExchangeCalendar calendar) : IHistoricalTradeSource
+    {
+        public Task<IReadOnlyList<TradeEvent>> GetTradesAsync(InstrumentSpec instrument, long fromMs, long toMs, CancellationToken cancellationToken)
+        {
+            var trades = new List<TradeEvent>();
+            for (var minute = fromMs; minute < toMs; minute += 60_000)
+            {
+                if (calendar.IsOpen(DateTimeOffset.FromUnixTimeMilliseconds(minute)))
+                {
+                    var price = TestData.EsBase + (minute / 60_000 % 4);
+                    trades.Add(TestData.Trade(minute + 30_000, price, 1, BookSide.Ask, $"H-{minute}", instrument.ContractId, instrument.Root));
+                }
+            }
+
+            return Task.FromResult<IReadOnlyList<TradeEvent>>(trades);
         }
     }
 

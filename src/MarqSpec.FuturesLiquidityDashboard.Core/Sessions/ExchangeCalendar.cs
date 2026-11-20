@@ -52,6 +52,35 @@ public sealed class ExchangeCalendar
         return instant >= session.Open && instant < session.Close;
     }
 
+    /// <summary>
+    /// The latest instant from which the exchange is open for at least <paramref name="minutes"/> whole minutes up to
+    /// <paramref name="end"/>, counting back minute by minute and skipping the daily break and the weekend
+    /// (ARCHITECTURE.md D-68). Never earlier than <paramref name="floor"/>: when that many open minutes do not fit
+    /// after it, the floor is returned and <c>Covered</c> is false.
+    /// </summary>
+    public (DateTimeOffset From, bool Covered) OpenMinutesBack(DateTimeOffset end, int minutes, DateTimeOffset floor)
+    {
+        var from = end;
+        var open = 0;
+        while (open < minutes)
+        {
+            var previous = from.AddMinutes(-1);
+            if (previous < floor)
+            {
+                return (floor, false);
+            }
+
+            if (IsOpen(previous))
+            {
+                open++;
+            }
+
+            from = previous;
+        }
+
+        return (from, true);
+    }
+
     /// <summary>The America/Chicago wall time and its UTC offset, for display (REQUIREMENTS.md FR-15, FR-26).</summary>
     public DateTimeOffset ToCentral(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, Central);
 

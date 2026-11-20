@@ -26,16 +26,17 @@ public sealed class FeedOptions
     public DepthOptions Depth { get; set; } = new();
 
     /// <summary>
-    /// Minimum hours of trade history loaded for warmup (EMA 200 on one-minute bars needs 200 minutes). History
-    /// always reaches back to the session open when that is further, and far enough for the slowest regime
-    /// timeframe to warm up (REQUIREMENTS.md FR-56), never more than 24 hours.
+    /// Minimum hours of trade history loaded for warmup. History always reaches back to the session open when that
+    /// is further and, with <see cref="WarmRegimes"/> on, far enough for the slowest regime timeframe (REQUIREMENTS.md FR-56)
+    /// and for EMA 200 on five-minute bars (ARCHITECTURE.md D-68), never more than 24 hours.
     /// </summary>
     [Range(0, 24)]
     public double MinHistoryHours { get; set; } = 4;
 
     /// <summary>
-    /// Whether history reaches far enough back for the slowest regime timeframe to warm up (REQUIREMENTS.md FR-56). Off, a
-    /// regime shows Unknown until enough live bars arrive; tests turn it off to start quickly.
+    /// Whether history reaches far enough back for the slowest regime timeframe (REQUIREMENTS.md FR-56) and the five-minute
+    /// EMAs (ARCHITECTURE.md D-68) to warm up. Off, only <see cref="MinHistoryHours"/> loads: a regime shows Unknown
+    /// and a slow EMA shows warming up until enough live bars arrive; tests turn it off to start quickly.
     /// </summary>
     public bool WarmRegimes { get; set; } = true;
 

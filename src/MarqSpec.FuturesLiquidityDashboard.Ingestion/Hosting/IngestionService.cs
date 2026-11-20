@@ -180,11 +180,12 @@ public sealed partial class IngestionService(
         if (history is not null)
         {
             var now = time.GetUtcNow();
-            // Far enough back for the slowest regime timeframe to be classified at startup (REQUIREMENTS.md FR-56).
-            var minHours = options.Value.WarmRegimes
-                ? Math.Max(options.Value.MinHistoryHours, registry.Options.Regime.WarmupHours)
-                : options.Value.MinHistoryHours;
-            var (fromMs, toMs) = HistoryWindow(now, minHours, calendar);
+            var (fromMs, toMs, covered) = WarmupWindow(now, options.Value, registry.Options, calendar);
+            if (!covered)
+            {
+                Log.WarmupCapped(logger, MaxHistoryHours, registry.Options.Regime.WarmupHours, registry.Options.IndicatorWarmupMinutes);
+            }
+
             var parallel = new ParallelOptions
             {
                 MaxDegreeOfParallelism = Math.Max(1, options.Value.HistoryConcurrency),
@@ -215,14 +216,44 @@ public sealed partial class IngestionService(
         return specs;
     }
 
-    /// <summary>From the earlier of the session open and <paramref name="minHours"/> ago, capped at 24 hours, to now.</summary>
+    /// <summary>The furthest back warmup history reaches, whatever the regimes or the EMAs need (ARCHITECTURE.md D-68).</summary>
+    public const double MaxHistoryHours = 24;
+
+    /// <summary>
+    /// The warmup window (ARCHITECTURE.md D-28, D-68). The current rule is <see cref="HistoryWindow"/> over
+    /// <c>MinHistoryHours</c>, raised to the slowest regime's warmup when <c>WarmRegimes</c> is on. With
+    /// <c>WarmRegimes</c> on it also reaches back until it holds enough open-market minutes to seed the slowest EMA on
+    /// <see cref="EngineOptions.SeededIndicatorSeconds"/> bars (REQUIREMENTS.md FR-17). Never more than
+    /// <see cref="MaxHistoryHours"/> back; <c>Covered</c> is false when a need did not fit.
+    /// </summary>
+    public static (long FromMs, long ToMs, bool Covered) WarmupWindow(
+        DateTimeOffset now, FeedOptions feed, EngineOptions engine, ExchangeCalendar calendar)
+    {
+        ArgumentNullException.ThrowIfNull(feed);
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(calendar);
+        // Far enough back for the slowest regime timeframe to be classified at startup (REQUIREMENTS.md FR-56).
+        var minHours = feed.WarmRegimes ? Math.Max(feed.MinHistoryHours, engine.Regime.WarmupHours) : feed.MinHistoryHours;
+        var (fromMs, toMs) = HistoryWindow(now, minHours, calendar);
+        var covered = minHours <= MaxHistoryHours;
+        if (feed.WarmRegimes)
+        {
+            var (emaFrom, emaCovered) = calendar.OpenMinutesBack(now, engine.IndicatorWarmupMinutes, now.AddHours(-MaxHistoryHours));
+            fromMs = Math.Min(fromMs, emaFrom.ToUnixTimeMilliseconds());
+            covered &= emaCovered;
+        }
+
+        return (fromMs, toMs, covered);
+    }
+
+    /// <summary>From the earlier of the session open and <paramref name="minHours"/> ago, capped at <see cref="MaxHistoryHours"/>, to now.</summary>
     public static (long FromMs, long ToMs) HistoryWindow(DateTimeOffset now, double minHours, ExchangeCalendar calendar)
     {
         ArgumentNullException.ThrowIfNull(calendar);
         var toMs = now.ToUnixTimeMilliseconds();
-        var byHours = now.AddHours(-Math.Clamp(minHours, 0, 24)).ToUnixTimeMilliseconds();
+        var byHours = now.AddHours(-Math.Clamp(minHours, 0, MaxHistoryHours)).ToUnixTimeMilliseconds();
         var open = calendar.SessionFor(now).Open.ToUnixTimeMilliseconds();
-        var fromMs = Math.Max(Math.Min(byHours, open), now.AddHours(-24).ToUnixTimeMilliseconds());
+        var fromMs = Math.Max(Math.Min(byHours, open), now.AddHours(-MaxHistoryHours).ToUnixTimeMilliseconds());
         return (Math.Min(fromMs, toMs), toMs);
     }
 
@@ -408,6 +439,9 @@ public sealed partial class IngestionService(
     {
         [LoggerMessage(Level = LogLevel.Information, Message = "Loaded {Count} warmup trades for {Root}")]
         public static partial void HistoryLoaded(ILogger logger, InstrumentRoot root, int count);
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "Warmup history is capped at {CapHours} h, short of the regime warmup ({RegimeHours} h) or the {EmaMinutes} open-market minutes the five-minute EMAs need; what it cannot seed shows as warming up until live bars arrive")]
+        public static partial void WarmupCapped(ILogger logger, double capHours, double regimeHours, int emaMinutes);
 
         [LoggerMessage(Level = LogLevel.Warning, Message = "Warmup history for {Root} failed; indicators start empty")]
         public static partial void HistoryFailed(ILogger logger, InstrumentRoot root, Exception exception);

@@ -24,5 +24,17 @@ public sealed record IndicatorSettings
 
     public AtrSetting Atr { get; init; } = new();
 
+    /// <summary>
+    /// One-minute bars of history that seed the slowest EMA, the longest period, on a source of
+    /// <paramref name="sourceSeconds"/>: one source bar more than the period, in whole minutes (REQUIREMENTS.md FR-17, D-68).
+    /// The extra bar is the one holding the last history print, which is still forming when history ends. Zero with
+    /// no EMA configured.
+    /// </summary>
+    public int EmaWarmupMinutes(int sourceSeconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(sourceSeconds, 1);
+        return Emas.Count == 0 ? 0 : (Emas.Max(e => e.Period) + 1) * ((sourceSeconds + 59) / 60);
+    }
+
     public static IndicatorSettings Default { get; } = new();
 }

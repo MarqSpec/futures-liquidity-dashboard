@@ -81,6 +81,55 @@ public sealed class ExchangeCalendarTests
         (central.Hour, central.Offset).Should().Be((8, TimeSpan.FromHours(-6)));
     }
 
+    // reference: ARCHITECTURE.md D-68 (warmup counts the minutes the exchange was open, not wall-clock hours)
+    [Fact]
+    public void OpenMinutesBack_ShouldGoBackThatManyMinutes_WhenTheSessionWasOpenThroughout()
+    {
+        var (from, covered) = _calendar.OpenMinutesBack(TestData.Epoch, 60, TestData.Epoch.AddHours(-24));
+
+        from.Should().Be(TestData.Epoch.AddMinutes(-60));
+        covered.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OpenMinutesBack_ShouldSkipTheDailyBreak_WhenTheWindowReachesThePreviousSession()
+    {
+        // Tue 08:00 CT: 900 open minutes back to Mon 17:00 CT, then 100 more before the Mon 16:00 CT close.
+        var (from, covered) = _calendar.OpenMinutesBack(TestData.Epoch, 1_000, TestData.Epoch.AddHours(-24));
+
+        from.Should().Be(Utc(2026, 11, 9, 20, 20), "Mon 14:20 CT leaves 1,000 open minutes before Tue 08:00 CT");
+        covered.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OpenMinutesBack_ShouldStopAtTheFloorAndSaySo_WhenTooFewOpenMinutesAreAfterIt()
+    {
+        // Sun 18:00 CT: one open hour since the weekly open; the Friday session is past the 24 h floor.
+        var end = Utc(2026, 11, 16, 0, 0);
+        var floor = end.AddHours(-24);
+
+        var (from, covered) = _calendar.OpenMinutesBack(end, 1_000, floor);
+
+        from.Should().Be(floor);
+        covered.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OpenMinutesBack_ShouldBeCovered_WhenTheOpenMinutesExactlyFillTheSpanToTheFloor()
+    {
+        var floor = TestData.Epoch.AddMinutes(-60);
+
+        var (from, covered) = _calendar.OpenMinutesBack(TestData.Epoch, 60, floor);
+
+        (from, covered).Should().Be((floor, true));
+    }
+
+    [Fact]
+    public void OpenMinutesBack_ShouldReturnTheEnd_WhenNoMinutesAreNeeded()
+    {
+        _calendar.OpenMinutesBack(TestData.Epoch, 0, TestData.Epoch.AddHours(-24)).Should().Be((TestData.Epoch, true));
+    }
+
     private static DateTimeOffset Utc(int year, int month, int day, int hour, int minute) =>
         new(year, month, day, hour, minute, 0, TimeSpan.Zero);
 }
