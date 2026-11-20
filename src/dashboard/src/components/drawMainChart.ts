@@ -7,6 +7,7 @@ import { autoContrastDomain, bookmapColor, rampT } from "../domain/heatRamp.ts";
 import type { HeatMode } from "../domain/layout.ts";
 import { HISTORY_WITHOUT_TAPE, TAPE_STARTS_HERE, aggressorColor, candleIsPriceMark, tapeBoundaryMs, tradeFlashAlpha, volumeDots } from "../domain/volumeDots.ts";
 import type { MarketState } from "../domain/merge.ts";
+import { touchOutcomeText } from "../domain/quote.ts";
 import { linearScale, niceTicks, timeTicks, type LinearScale } from "../domain/scale.ts";
 import { biasColors, kindName } from "../domain/signals.ts";
 import { hatchPattern, labelBox, type Surface } from "../lib/canvas.ts";
@@ -518,6 +519,8 @@ function drawKeyLevels(ctx: CanvasRenderingContext2D, m: MainChartModel, price: 
           isHigh: level.isHigh,
           touches: 0,
           isThirdTouch: false,
+          held: 0,
+          broke: 0,
         }));
   for (const level of levels) {
     if (level.priceTicks < m.lowTicks || level.priceTicks > m.highTicks) continue;
@@ -542,7 +545,7 @@ function drawKeyLevels(ctx: CanvasRenderingContext2D, m: MainChartModel, price: 
       y: y - 6,
       r: 8,
       title: third ? `Third touch · ${level.name}` : `Key level · ${level.name}`,
-      lines: [formatTicks(level.priceTicks, spec), level.touches > 0 ? `${level.touches} touches` : "no touch yet"],
+      lines: [formatTicks(level.priceTicks, spec), touchOutcomeText(level)],
     });
   }
 }

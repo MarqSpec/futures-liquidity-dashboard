@@ -74,7 +74,7 @@ export function mainChartDrawKey(
   hash = mixList(hash, model.market.prints.map((print) => [print.sequence, print.sourceTimeMs, print.priceTicks, print.quantity, print.aggressor]));
   hash = mixHeat(hash, model);
   hash = mixList(hash, model.signals.map((signal) => [signal.id, signal.kind, signal.bias, signal.timeMs, signal.priceTicks, signal.priceHighTicks, signal.strength, signal.label, signal.detail]));
-  hash = mixList(hash, model.levelTouches.map((level) => [level.name, level.priceTicks, level.isHigh ? 1 : 0, level.touches, level.isThirdTouch ? 1 : 0, level.lastTouchMs ?? ""]));
+  hash = mixList(hash, model.levelTouches.map((level) => [level.name, level.priceTicks, level.isHigh ? 1 : 0, level.touches, level.isThirdTouch ? 1 : 0, level.lastTouchMs ?? "", level.held, level.broke]));
   hash = mixList(hash, flow.keyLevels.map((level) => [level.name, level.priceTicks, level.isHigh ? 1 : 0]));
   hash = mix(hash, [flow.footprintSeconds]);
   hash = mixList(hash, flow.zones.map((zone) => [zone.bias, zone.lowTicks, zone.highTicks, zone.levels, zone.averageRatio]));

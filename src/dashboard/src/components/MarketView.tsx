@@ -324,7 +324,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
         {paneOn("ladder") && <DomLadder market={market} isKindOn={kindOn} fold={fold("ladder")} />}
         <LiquidityPanel liquidity={market.liquidity} spec={spec} fold={fold("liquidity")} />
         <SignalsPanel signals={market.orderFlow.signals} spec={spec} isKindOn={kindOn} onToggleKind={onToggleKind} fold={fold("signals")} />
-        <OverlayPanel overlay={market.overlay} spec={spec} shown={paneOn("overlay")} fold={fold("levels")} />
+        <OverlayPanel overlay={market.overlay} spec={spec} shown={paneOn("overlay")} fold={fold("levels")} touches={market.levelTouches} />
         {showProfile && (
           <ProfilePanel
             profiles={market.profiles}

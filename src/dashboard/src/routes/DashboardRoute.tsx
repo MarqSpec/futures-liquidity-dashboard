@@ -94,6 +94,7 @@ export function DashboardRoute() {
               watchlist={layout.watchlist}
               onSelect={selectInstrument}
               onWatch={watchInstrument}
+              onOpen={openDetail}
             />
             <section id="instrument-panel" className="instrument-panel" aria-label={`${viewTabLabel(tab, layout.instrument)} chart`}>
               <StatusBar

@@ -201,6 +201,9 @@ export const levelTouchSchema = z.object({
   isThirdTouch: z.boolean().default(false),
   sessionId: z.string().nullish(),
   asOfMs: long.nullish(),
+  /** Touches that held and that broke (REQUIREMENTS.md FR-79); the two add up to `touches`. */
+  held: z.number().int().default(0),
+  broke: z.number().int().default(0),
 });
 
 /** One live print (REQUIREMENTS.md FR-59). History warmup is not in this array. */

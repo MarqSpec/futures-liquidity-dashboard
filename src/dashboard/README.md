@@ -178,6 +178,20 @@ Inside Order Flow's warmup band only the edges are drawn. Detail's Layers panel 
 `range-zones` pane flag, on by default) and the **bars** select; Order Flow's Display menu has the same two as buttons.
 Both are saved on the layout, so the tabs always agree. The dashboard never classifies a regime itself.
 
+### Level touches
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-79, ARCHITECTURE.md D-65.)* Each level the server counts touches for carries `held`
+and `broke` beside `touches`: a touch broke when a closed minute closed at least 2 ticks beyond the level on the far
+side from where price came, and held otherwise (an open touch reads as held until a closed minute breaks it). The
+server judges it over every retained closed minute, like the touch counts, not only the current session; the dashboard only formats it, with
+`touchOutcomeText` in `domain/quote.ts` (`2 touches · 1 held · 1 broke`, `3rd touch · …`, or `no touch yet`). The
+touch lane under the favorites (`components/InstrumentTabs.tsx`) lists the starred products' touches first, then the
+most recent touch, with root, level name and price breaking ties (`recentTouches`), so a refresh that lists the
+products in another order draws the same lane. Each chip is a button that opens its product in Detail, from Order
+Flow as well. Detail's **Levels** side section (`components/OverlayPanel.tsx`) lists the open product's levels,
+highest first, with the same text, above the agent overlay; the price chart's level hover lines and the favorites
+menu's nearest-level line say it too. None of it is a forecast.
+
 ## Products, the watchlist and depth
 
 The product list is not fixed in the dashboard: it comes from `GET /api/instruments` (seeded by the route loader,

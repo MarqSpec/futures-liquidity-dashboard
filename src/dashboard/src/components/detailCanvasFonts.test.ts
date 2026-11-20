@@ -20,7 +20,7 @@ function textFonts(calls: readonly CanvasCall[]): unknown[] {
 describe("Detail canvas text", () => {
   it("should write every main chart label in a data-xs or data-sm face when the chart is busy", () => {
     const { surface, calls } = fakeSurface();
-    const levelTouches = [{ name: "PDH", priceTicks: 110, isHigh: true, touches: 3, isThirdTouch: true }];
+    const levelTouches = [{ name: "PDH", priceTicks: 110, isHigh: true, touches: 3, isThirdTouch: true, held: 3, broke: 0 }];
 
     const geometry = drawMainChart(surface, model({ profile, emphasizeNodes: true, levelTouches, signals: market.orderFlow.signals }));
     const layer = fakeSurface();

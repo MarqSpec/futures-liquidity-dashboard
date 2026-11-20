@@ -131,8 +131,8 @@ describe("drawMainChart", () => {
   it("should mark a third touch last-price and other levels by side when key levels are drawn", () => {
     const { surface, calls } = fakeSurface();
     const levelTouches = [
-      { name: "PDH", priceTicks: 110, isHigh: true, touches: 3, isThirdTouch: true },
-      { name: "PDL", priceTicks: 85, isHigh: false, touches: 1, isThirdTouch: false },
+      { name: "PDH", priceTicks: 110, isHigh: true, touches: 3, isThirdTouch: true, held: 3, broke: 0 },
+      { name: "PDL", priceTicks: 85, isHigh: false, touches: 1, isThirdTouch: false, held: 1, broke: 0 },
     ];
 
     drawMainChart(surface, model({ vwap: false, levelTouches }));
@@ -151,8 +151,8 @@ describe("drawMainChart key levels", () => {
   it("should stroke a high resistance and a low support when neither is a third touch", () => {
     const { surface, calls } = fakeSurface();
     const levelTouches = [
-      { name: "PDH", priceTicks: 110, isHigh: true, touches: 1, isThirdTouch: false },
-      { name: "PDL", priceTicks: 85, isHigh: false, touches: 1, isThirdTouch: false },
+      { name: "PDH", priceTicks: 110, isHigh: true, touches: 1, isThirdTouch: false, held: 1, broke: 0 },
+      { name: "PDL", priceTicks: 85, isHigh: false, touches: 1, isThirdTouch: false, held: 1, broke: 0 },
     ];
 
     drawMainChart(surface, model({ vwap: false, showCandles: false, levelTouches }));

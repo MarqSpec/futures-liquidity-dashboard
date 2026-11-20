@@ -1990,18 +1990,19 @@ public sealed class InstrumentEngine
 
     private List<LevelTouch> TouchesLocked()
     {
-        var bars = new List<(long TimeMs, long Low, long High)>();
+        var bars = new List<(long TimeMs, long Low, long High, long? Close)>();
         foreach (var bar in _closedMinutes)
         {
             if (bar.Low is { } low && bar.High is { } high)
             {
-                bars.Add((bar.StartMs, low, high));
+                bars.Add((bar.StartMs, low, high, bar.Close));
             }
         }
 
+        // The developing minute can make a touch but has not closed, so it cannot break a level (FR-79).
         if (_minuteBars.Current is { IsEmpty: false, Low: { } developingLow, High: { } developingHigh } developing)
         {
-            bars.Add((developing.StartMs, developingLow, developingHigh));
+            bars.Add((developing.StartMs, developingLow, developingHigh, null));
         }
 
         var levels = new List<(string Name, long Price, bool IsHigh, string? SessionId, long? AsOfMs)>();

@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { InstrumentSummary } from "../api/schemas.ts";
 import { watchlistLimit } from "../domain/layout.ts";
-import { lastPriceText, nearestLevelText, recentTouches, sessionChange, vwapPosition } from "../domain/quote.ts";
+import { lastPriceText, nearestLevelText, recentTouches, sessionChange, touchOutcomeText, vwapPosition } from "../domain/quote.ts";
 
 /** Props of the favorites menu that replaced the instrument tab row. */
 export interface InstrumentTabsProps {
@@ -11,20 +11,23 @@ export interface InstrumentTabsProps {
   readonly watchlist: readonly string[];
   readonly onSelect: (root: string) => void;
   readonly onWatch: (root: string, on: boolean) => void;
+  /** Opens a product in Detail, from a touch chip. */
+  readonly onOpen: (root: string) => void;
 }
 
 /**
  * Favorites for Detail and Bookmap. The open product, its last price and the session change sit on one button.
  * The menu switches to any favorite, removes one, or adds a product the server has listed. A lane under it
- * still lists recent level touches (REQUIREMENTS.md FR-10).
+ * still lists recent level touches (REQUIREMENTS.md FR-10), starred products first, each with how its touches ended and
+ * opening its product in Detail (FR-79).
  */
-export function InstrumentTabs({ selected, quotes, watchlist, onSelect, onWatch }: InstrumentTabsProps) {
+export function InstrumentTabs({ selected, quotes, watchlist, onSelect, onWatch, onOpen }: InstrumentTabsProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const byRoot = useMemo(() => new Map(quotes.map((quote) => [quote.instrument.root, quote])), [quotes]);
-  const touches = recentTouches(quotes);
+  const touches = recentTouches(quotes, watchlist);
   const selectedQuote = byRoot.get(selected);
   const spec = selectedQuote?.instrument ?? { tickSize: 0.25, priceDecimals: 2 };
   const change = selectedQuote?.changeTicks ?? null;
@@ -128,8 +131,10 @@ export function InstrumentTabs({ selected, quotes, watchlist, onSelect, onWatch 
           <li className="muted">No level touches yet</li>
         ) : (
           touches.map((touch) => (
-            <li key={`${touch.root}-${touch.level.name}-${touch.level.lastTouchMs ?? 0}`} className={touch.level.isThirdTouch ? "third" : undefined}>
-              <strong>{touch.root}</strong> {touch.level.name} {touch.level.isThirdTouch ? "3rd touch" : `${touch.level.touches} touches`}
+            <li key={`${touch.root}-${touch.level.name}-${touch.level.priceTicks}`} className={touch.level.isThirdTouch ? "third" : undefined}>
+              <button type="button" title={`Open ${touch.root} in Detail`} onClick={() => onOpen(touch.root)}>
+                <strong>{touch.root}</strong> {touch.level.name} {touchOutcomeText(touch.level)}
+              </button>
             </li>
           ))
         )}

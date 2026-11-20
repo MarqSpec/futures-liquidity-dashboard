@@ -1031,6 +1031,16 @@ p {
   white-space: nowrap;
 }
 
+/* A chip is a button that opens its product in Detail (REQUIREMENTS.md FR-79); it keeps the pill's look. */
+.touch-lane li button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .touch-lane li strong {
   font-family: var(--font-mono);
   color: var(--on-surface);
@@ -1638,6 +1648,7 @@ p {
 .ld-level-resistance::before { background: var(--resistance); }
 .ld-level .ld-level-type { color: var(--on-surface-muted); font-family: var(--font-sans); text-transform: lowercase; }
 .ld-level .kind { min-width: 72px; color: var(--on-surface-muted); font-family: var(--font-sans); }
+.ld-level-third::before { background: var(--last-price); }
 
 .ld-panel.profile .pane-canvas {
   flex: none;

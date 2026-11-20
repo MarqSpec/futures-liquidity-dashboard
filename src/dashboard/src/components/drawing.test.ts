@@ -51,6 +51,16 @@ describe("drawMainChart", () => {
     expect(geometry.markers.filter((m) => inView.some((s) => m.title.endsWith(s.label))).length).toBe(inView.length);
   });
 
+  // (REQUIREMENTS.md FR-79)
+  it("should say how a level's touches ended in its hover lines when it has been touched", () => {
+    const { surface } = fakeSurface();
+    const levelTouches = [{ name: "PDH", priceTicks: 27_500, isHigh: true, touches: 2, lastTouchMs: 5, isThirdTouch: false, held: 1, broke: 1 }];
+
+    const geometry = drawMainChart(surface, model({ vwap: false, levelTouches }));
+
+    expect(geometry.markers.find((m) => m.title === "Key level · PDH")?.lines).toEqual(["6875.00", "2 touches · 1 held · 1 broke"]);
+  });
+
   it("should draw no signal marker when the signals are filtered out", () => {
     const { surface } = fakeSurface();
 
@@ -313,10 +323,19 @@ describe("mainChartDrawKey", () => {
   });
 
   it("should change when a level touch's count changes and the list length does not", () => {
-    const touch = { name: "VAL", priceTicks: 27_000, isHigh: false, touches: 1, lastTouchMs: 5, isThirdTouch: false };
+    const touch = { name: "VAL", priceTicks: 27_000, isHigh: false, touches: 1, lastTouchMs: 5, isThirdTouch: false, held: 1, broke: 0 };
 
     expect(mainChartDrawKey(model({ levelTouches: [touch] }), 800, 400)).not.toBe(
       mainChartDrawKey(model({ levelTouches: [{ ...touch, touches: 2 }] }), 800, 400),
+    );
+  });
+
+  // (REQUIREMENTS.md FR-79)
+  it("should change when a touch's outcome changes and its count does not", () => {
+    const touch = { name: "VAL", priceTicks: 27_000, isHigh: false, touches: 1, lastTouchMs: 5, isThirdTouch: false, held: 1, broke: 0 };
+
+    expect(mainChartDrawKey(model({ levelTouches: [touch] }), 800, 400)).not.toBe(
+      mainChartDrawKey(model({ levelTouches: [{ ...touch, held: 0, broke: 1 }] }), 800, 400),
     );
   });
 

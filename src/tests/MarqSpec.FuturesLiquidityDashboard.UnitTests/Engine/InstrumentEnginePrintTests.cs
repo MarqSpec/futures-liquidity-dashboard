@@ -5,7 +5,7 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Market;
 
 namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.Engine;
 
-// reference: REQUIREMENTS.md FR-59, FR-61, FR-63, NFR-4; ARCHITECTURE.md D-34, D-35
+// reference: REQUIREMENTS.md FR-59, FR-61, FR-63, FR-79, NFR-4; ARCHITECTURE.md D-34, D-35, D-65
 public sealed class InstrumentEnginePrintTests
 {
     private const long Px = TestData.EsBase;
@@ -99,6 +99,40 @@ public sealed class InstrumentEnginePrintTests
         Named(levels, RipsLevelNames.FourHourMid).PriceTicks.Should().Be(100);
         levels.Should().NotContain(level => level.Name == RipsLevelNames.PriorWeekHigh);
         engine.Snapshot(60, null).LevelTouches.Should().Contain(level => level.Name == RipsLevelNames.Pdh && !level.IsThirdTouch);
+    }
+
+    [Fact]
+    public void LevelTouches_ShouldCountATouchAsBroke_WhenAClosedMinuteClosesTwoTicksBeyondTheLevel()
+    {
+        // Given PDH at 110, then a return from below that closes three ticks above it
+        var engine = Engine();
+        engine.Apply(Trade(Utc(2026, 11, 9, 14, 30), 90, "rth-open"));
+        engine.Apply(Trade(Utc(2026, 11, 9, 21, 14), 110, "rth-close"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 30), 95, "daily-open"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 41), 110, "touch"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 42), 113, "through"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 43), 113, "developing"));
+
+        // When the touches are read
+        var pdh = engine.Snapshot(60, null).LevelTouches.Single(level => level.Name == RipsLevelNames.Pdh);
+
+        // Then the return broke and the earlier touch held
+        pdh.Should().BeEquivalentTo(new { Touches = 2, Held = 1, Broke = 1 });
+        engine.Quote().Levels.Single(level => level.Name == RipsLevelNames.Pdh).Broke.Should().Be(1);
+    }
+
+    [Fact]
+    public void LevelTouches_ShouldNotCountATouchAsBroke_WhenOnlyTheDevelopingMinuteIsBeyondTheLevel()
+    {
+        var engine = Engine();
+        engine.Apply(Trade(Utc(2026, 11, 9, 14, 30), 90, "rth-open"));
+        engine.Apply(Trade(Utc(2026, 11, 9, 21, 14), 110, "rth-close"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 30), 95, "daily-open"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 41), 110, "touch"));
+        engine.Apply(Trade(Utc(2026, 11, 10, 14, 42), 113, "developing"));
+
+        engine.Snapshot(60, null).LevelTouches.Single(level => level.Name == RipsLevelNames.Pdh)
+            .Should().BeEquivalentTo(new { Touches = 2, Held = 2, Broke = 0 });
     }
 
     [Fact]
