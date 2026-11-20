@@ -1,7 +1,7 @@
 import type { Regime } from "../api/schemas.ts";
 import type { TickSpec } from "../domain/format.ts";
 import { hints } from "../domain/hints.ts";
-import { regimeLabel, regimeTitle, regimeTone, timeframeLabel } from "../domain/regime.ts";
+import { regimeLabel, regimeExplanation, regimeTone, timeframeLabel } from "../domain/regime.ts";
 import { Hint } from "./Hint.tsx";
 
 /** Props of a regime badge. */
@@ -13,10 +13,10 @@ export interface RegimeBadgeProps {
 
 /**
  * One timeframe's regime as a short coloured label ("5m Trend ↑"). Its hint says what the label means and, after it,
- * the inputs and since when (REQUIREMENTS.md UC-14). The label takes keyboard focus so the hint is reachable without a pointer.
+ * why: the inputs, the thresholds and the test that decided it, and since when (REQUIREMENTS.md FR-56, UC-14, UC-19). The label takes keyboard focus so the hint is reachable without a pointer.
  */
 export function RegimeBadge({ regime, timeframeSeconds, spec }: RegimeBadgeProps) {
-  const text = `${timeframeSeconds === 900 ? hints.regime15m : hints.regime5m} ${regimeTitle(regime, spec)}`;
+  const text = `${timeframeSeconds === 900 ? hints.regime15m : hints.regime5m}\n${regimeExplanation(regime, spec).join("\n")}`;
   return (
     <Hint label={`${timeframeLabel(timeframeSeconds)} regime`} text={text}>
       {(hint) => (

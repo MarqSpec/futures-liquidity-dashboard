@@ -65,6 +65,14 @@ public sealed class ApiTests(DashboardFactory factory) : IClassFixture<Dashboard
             var regimes = row.GetProperty("summary").GetProperty("regimes").EnumerateArray().ToList();
             regimes.Select(r => r.GetProperty("timeframeSeconds").GetInt32()).Should().Equal(300, 900);
             regimes.Should().OnlyContain(r => r.GetProperty("trend").ValueKind == JsonValueKind.String);
+            regimes.Select(r => r.GetProperty("basis").GetString()).Should().OnlyContain(
+                b => b == "Warmup" || b == "TrendMet" || b == "DirectionDisagrees" || b == "RangeMet" || b == "Between",
+                "the dashboard reads basis as one of the five RegimeBasis names (INTERFACES.md D.1)");
+            regimes.Should().OnlyContain(r =>
+                r.GetProperty("thresholds").GetProperty("trendAdx").ValueKind == JsonValueKind.Number &&
+                r.GetProperty("thresholds").GetProperty("trendEfficiency").ValueKind == JsonValueKind.Number &&
+                r.GetProperty("thresholds").GetProperty("rangeAdx").ValueKind == JsonValueKind.Number &&
+                r.GetProperty("thresholds").GetProperty("rangeEfficiency").ValueKind == JsonValueKind.Number);
         }
     }
 

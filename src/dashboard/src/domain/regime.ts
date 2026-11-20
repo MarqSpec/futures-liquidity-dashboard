@@ -85,6 +85,76 @@ export function regimeTitle(regime: Regime | null, spec: TickSpec): string {
   ].join(" · ");
 }
 
+/** A threshold exactly as the server sent it, so the sentence names the limit the rule compared against. */
+function limit(value: number): string {
+  return String(value);
+}
+
+/**
+ * Why a regime reads as it does, as lines of text for the badge's hint: the verdict, the test that decided it (the
+ * server's `basis`) beside the thresholds it was judged against, and every input. Nothing here classifies: the
+ * server names the test, and these lines only print its numbers (REQUIREMENTS.md FR-56, UC-19).
+ */
+export function regimeExplanation(regime: Regime | null, spec: TickSpec): string[] {
+  if (regime === null) return ["No regime published for this timeframe"];
+  const head = `${timeframeLabel(regime.timeframeSeconds)} ${regimeLabel(regime)}`;
+  // The server's own precision (RegimeTracker.State): fewer places could print a value just under a limit as the limit.
+  const adx = num(regime.adx, 2);
+  const er = num(regime.efficiencyRatio, 3);
+  const plusDi = num(regime.plusDi, 2);
+  const minusDi = num(regime.minusDi, 2);
+  const t = regime.thresholds;
+  let why: string;
+  if (regime.basis === "Warmup" && t === null) {
+    why = "Limits not published by this server.";
+  } else {
+    switch (regime.basis) {
+      case "Warmup":
+        why = `Warming up: ${regime.seenBars} of ${regime.warmupBars} closed bars are in.`;
+        break;
+      case "TrendMet": {
+        const up = regime.trend === "TrendingUp";
+        const di = up
+          ? `+DI ${plusDi} is over -DI ${minusDi}`
+          : `-DI ${minusDi} is over +DI ${plusDi}`;
+        why = t
+          ? `Trending ${up ? "up" : "down"}: ADX ${adx} is at or over ${limit(t.trendAdx)} and the efficiency ratio ${er} is at or over ${limit(t.trendEfficiency)}; ${di}.`
+          : `Trending ${up ? "up" : "down"}: ${di}.`;
+        break;
+      }
+      case "DirectionDisagrees":
+        why = t
+          ? `Unclear: ADX ${adx} and the efficiency ratio ${er} meet the trend limits (${limit(t.trendAdx)}, ${limit(t.trendEfficiency)}), but +DI/-DI and the EMAs do not point the same way.`
+          : "Unclear: +DI/-DI and the EMAs do not point the same way.";
+        break;
+      case "RangeMet":
+        why = t
+          ? `Range: ADX ${adx} is at or under ${limit(t.rangeAdx)} and the efficiency ratio ${er} is at or under ${limit(t.rangeEfficiency)}.`
+          : "Range: ADX and the efficiency ratio are both low.";
+        break;
+      case "Between":
+        why = t
+          ? `Unclear: ADX ${adx} and the efficiency ratio ${er} are not both over the trend limits (${limit(t.trendAdx)}, ${limit(t.trendEfficiency)}) and not both under the range limits (${limit(t.rangeAdx)}, ${limit(t.rangeEfficiency)}).`
+          : "Unclear: between the trend and range limits.";
+        break;
+      case "Unknown":
+        why = "The server named a test this dashboard does not read; its inputs are below.";
+        break;
+      default: {
+        const unreachable: never = regime.basis;
+        return unreachable;
+      }
+    }
+  }
+  const since = regime.sinceMs === null ? "—" : formatLocalMinute(regime.sinceMs);
+  return [
+    head,
+    why,
+    `ADX ${adx} · efficiency ratio ${er} · +DI ${plusDi} · -DI ${minusDi} · EMA fast ${formatTicks(regime.emaFast, spec)} / slow ${formatTicks(regime.emaSlow, spec)}`,
+    `since ${since}`,
+  ];
+}
+
 type Direction = "up" | "down" | "range";
 
 function readable(regime: Regime | null): Direction | null {

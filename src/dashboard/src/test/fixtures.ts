@@ -42,10 +42,14 @@ export function regimeFixture(timeframeSeconds: number, overrides: Partial<Regim
     seenBars: 40,
     warmupBars: 28,
     adx: 18.5,
+    plusDi: 20,
+    minusDi: 18,
     efficiencyRatio: 0.2,
     emaFast: 27_000,
     emaSlow: 27_010,
     sinceMs: 1_794_114_000_000,
+    basis: "RangeMet",
+    thresholds: { trendAdx: 25, trendEfficiency: 0.3, rangeAdx: 20, rangeEfficiency: 0.2 },
     ...overrides,
   };
 }

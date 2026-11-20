@@ -120,6 +120,42 @@ describe("marketSummarySchema regimes", () => {
 
     expect(row?.summary.regimes[0]).toMatchObject({ ready: false, adx: null, emaFast: null, sinceMs: null });
   });
+
+  it("should read the DI, the basis and the thresholds the server sends", () => {
+    const thresholds = { trendAdx: 25, trendEfficiency: 0.3, rangeAdx: 20, rangeEfficiency: 0.2 };
+    const [row] = instrumentSummariesSchema.parse([
+      {
+        instrument: rows[0]?.instrument,
+        status: rows[0]?.status,
+        summary: { ...emptyMarketSummary, regimes: [{ timeframeSeconds: 300, trend: "Ranging", plusDi: 12.5, minusDi: 20, basis: "RangeMet", thresholds }] },
+      },
+    ]);
+
+    expect(row?.summary.regimes[0]).toMatchObject({ plusDi: 12.5, minusDi: 20, basis: "RangeMet", thresholds });
+  });
+
+  it("should read an older server's regime, with no basis or thresholds, as warmup and null", () => {
+    const [row] = instrumentSummariesSchema.parse([
+      { instrument: rows[0]?.instrument, status: rows[0]?.status, summary: { ...emptyMarketSummary, regimes: [{ timeframeSeconds: 300, trend: "Ranging" }] } },
+    ]);
+
+    expect(row?.summary.regimes[0]).toMatchObject({ plusDi: null, minusDi: null, basis: "Warmup", thresholds: null });
+  });
+
+  it("should read a basis this client does not list as Unknown, not as warmup", () => {
+    const thresholds = { trendAdx: 25, trendEfficiency: 0.3, rangeAdx: 20, rangeEfficiency: 0.2 };
+    const parse = (basis: unknown) =>
+      instrumentSummariesSchema.parse([
+        {
+          instrument: rows[0]?.instrument,
+          status: rows[0]?.status,
+          summary: { ...emptyMarketSummary, regimes: [{ timeframeSeconds: 300, trend: "Ranging", ready: true, basis, thresholds }] },
+        },
+      ])[0]?.summary.regimes[0]?.basis;
+
+    expect([parse("VolatilityMet"), parse(3), parse("rangeMet")]).toEqual(["Unknown", "Unknown", "Unknown"]);
+    expect(parse("RangeMet")).toBe("RangeMet");
+  });
 });
 
 describe("watchlistResultSchema", () => {

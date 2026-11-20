@@ -347,6 +347,19 @@ export type RegimeTrend = (typeof regimeTrends)[number];
 const nullableDbl = dbl.nullish().transform((v) => v ?? null);
 const nullableLong = long.nullish().transform((v) => v ?? null);
 
+/** Which test of FR-56's rule decided a regime (the server's `RegimeBasis`). */
+export const regimeBases = ["Warmup", "TrendMet", "DirectionDisagrees", "RangeMet", "Between"] as const;
+/** A server basis, or "Unknown" for one this client does not list (a value added later, or not a string). */
+export type RegimeBasis = (typeof regimeBases)[number] | "Unknown";
+
+/** The thresholds FR-56's rule judged a regime against. */
+export const regimeThresholdsSchema = z.object({
+  trendAdx: dbl,
+  trendEfficiency: dbl,
+  rangeAdx: dbl,
+  rangeEfficiency: dbl,
+});
+
 /** One timeframe's regime. Fields the server adds later (another regime kind) are dropped. */
 export const regimeSchema = z.object({
   timeframeSeconds: z.number().int().positive(),
@@ -355,10 +368,23 @@ export const regimeSchema = z.object({
   seenBars: z.number().int().default(0),
   warmupBars: z.number().int().default(0),
   adx: nullableDbl,
+  plusDi: nullableDbl,
+  minusDi: nullableDbl,
   efficiencyRatio: nullableDbl,
   emaFast: nullableDbl,
   emaSlow: nullableDbl,
   sinceMs: nullableLong,
+  /**
+   * Which test of FR-56's rule decided the trend. An older server sends none, which reads as warmup; a value this
+   * client does not list reads as "Unknown", never as a test it did not name.
+   */
+  basis: z
+    .enum(regimeBases)
+    .nullish()
+    .transform((v): RegimeBasis => v ?? "Warmup")
+    .catch("Unknown"),
+  /** The limits the trend was judged against; null from an older server. */
+  thresholds: regimeThresholdsSchema.nullish().transform((v) => v ?? null),
 });
 
 /** The regimes array, kept tolerant: an entry this client cannot read is left out rather than failing the row. */

@@ -74,6 +74,39 @@ public sealed class RegimeTests
     }
 
     [Theory]
+    [InlineData(30.0, 40.0, 10.0, 0.5, 110.0, 100.0, TrendRegime.TrendingUp, RegimeBasis.TrendMet)]
+    [InlineData(30.0, 10.0, 40.0, 0.5, 90.0, 100.0, TrendRegime.TrendingDown, RegimeBasis.TrendMet)]
+    [InlineData(30.0, 40.0, 10.0, 0.5, 90.0, 100.0, TrendRegime.Transition, RegimeBasis.DirectionDisagrees)]
+    [InlineData(30.0, 40.0, 10.0, 0.1, 110.0, 100.0, TrendRegime.Transition, RegimeBasis.Between)]
+    [InlineData(15.0, 20.0, 18.0, 0.1, 110.0, 100.0, TrendRegime.Ranging, RegimeBasis.RangeMet)]
+    [InlineData(22.0, 20.0, 18.0, 0.1, 110.0, 100.0, TrendRegime.Transition, RegimeBasis.Between)]
+    public void Explain_ShouldNameTheTestThatDecidedTheRegime(
+        double adx, double plusDi, double minusDi, double efficiency, double? emaFast, double? emaSlow, TrendRegime expected, RegimeBasis basis)
+    {
+        var (trend, why) = RegimeTracker.Explain(adx, plusDi, minusDi, efficiency, emaFast, emaSlow, RegimeOptions.Default);
+
+        trend.Should().Be(expected);
+        why.Should().Be(basis);
+    }
+
+    [Fact]
+    public void Explain_ShouldBeWarmup_WhileTheInputsWarmUp()
+    {
+        RegimeTracker.Explain(null, null, null, 0.5, null, null, RegimeOptions.Default).Should().Be((TrendRegime.Unknown, RegimeBasis.Warmup));
+    }
+
+    [Fact]
+    public void State_ShouldCarryTheThresholdsItWasJudgedAgainst_AndTheBasis()
+    {
+        var options = RegimeOptions.Default with { TrendAdx = 27, TrendEfficiency = 0.35, RangeAdx = 18, RangeEfficiency = 0.15 };
+        var tracker = new RegimeTracker(Bar, options);
+
+        var warming = tracker.State();
+        warming.Basis.Should().Be(RegimeBasis.Warmup);
+        warming.Thresholds.Should().Be(new RegimeThresholdsDto(27, 0.35, 18, 0.15));
+    }
+
+    [Theory]
     [InlineData(1, TrendRegime.TrendingUp)]
     [InlineData(-1, TrendRegime.TrendingDown)]
     public void Tracker_ShouldCallATrend_OnASteadilyDriftingSeries(int direction, TrendRegime expected)
@@ -89,6 +122,7 @@ public sealed class RegimeTests
         tracker.AdvanceTo(T0 + (81L * Bar * 1000));
         var state = tracker.State();
         state.Trend.Should().Be(expected);
+        state.Basis.Should().Be(RegimeBasis.TrendMet);
         state.Ready.Should().BeTrue();
         state.Adx.Should().BeGreaterThan(25);
         state.EfficiencyRatio.Should().BeGreaterThan(0.3);
@@ -109,6 +143,7 @@ public sealed class RegimeTests
         tracker.AdvanceTo(T0 + (81L * Bar * 1000));
         var state = tracker.State();
         state.Trend.Should().Be(TrendRegime.Ranging);
+        state.Basis.Should().Be(RegimeBasis.RangeMet);
         state.Adx.Should().BeLessThan(20);
     }
 

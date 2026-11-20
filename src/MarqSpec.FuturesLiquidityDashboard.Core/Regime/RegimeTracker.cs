@@ -18,6 +18,29 @@ public enum TrendRegime
     TrendingDown,
 }
 
+/// <summary>Which test of the rule put a timeframe in its state (REQUIREMENTS.md FR-56), so a client says why without judging it.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<RegimeBasis>))]
+public enum RegimeBasis
+{
+    /// <summary>Not enough bars yet, so no test was applied.</summary>
+    Warmup,
+
+    /// <summary>ADX and the efficiency ratio met the trend thresholds and the direction agreed.</summary>
+    TrendMet,
+
+    /// <summary>ADX and the efficiency ratio met the trend thresholds but +DI/-DI and the EMAs disagreed.</summary>
+    DirectionDisagrees,
+
+    /// <summary>ADX and the efficiency ratio were both at or under the range thresholds.</summary>
+    RangeMet,
+
+    /// <summary>Neither the trend nor the range thresholds were met together.</summary>
+    Between,
+}
+
+/// <summary>The thresholds of FR-56's rule a regime was judged against (<c>Engine:Regime</c>).</summary>
+public sealed record RegimeThresholdsDto(double TrendAdx, double TrendEfficiency, double RangeAdx, double RangeEfficiency);
+
 /// <summary>
 /// One timeframe's regime with the inputs that decided it (INTERFACES.md D.1). Prices are in ticks. New regime
 /// kinds are added as new fields, so older clients keep reading <see cref="Trend"/>.
@@ -34,7 +57,9 @@ public sealed record RegimeDto(
     double? EfficiencyRatio,
     double? EmaFast,
     double? EmaSlow,
-    long? SinceMs);
+    long? SinceMs,
+    RegimeBasis Basis = RegimeBasis.Warmup,
+    RegimeThresholdsDto? Thresholds = null);
 
 /// <summary>
 /// Classifies one bar timeframe as trending or ranging from closed bars (REQUIREMENTS.md FR-56). The rule is mechanical:
@@ -58,6 +83,7 @@ public sealed class RegimeTracker
     private readonly Ema _slow;
     private readonly RangeZoneBuilder _zones = new();
     private TrendRegime _trend = TrendRegime.Unknown;
+    private RegimeBasis _basis = RegimeBasis.Warmup;
     private long? _sinceMs;
     private int _seen;
 
@@ -113,10 +139,22 @@ public sealed class RegimeTracker
 
     public RegimeDto State() => new(
         TimeframeSeconds, _trend, _trend != TrendRegime.Unknown, _seen, WarmupBars,
-        Round(_adx.Value), Round(_adx.PlusDi), Round(_adx.MinusDi), Round(_efficiency.Value, 3), Round(_fast.Value), Round(_slow.Value), _sinceMs);
+        Round(_adx.Value), Round(_adx.PlusDi), Round(_adx.MinusDi), Round(_efficiency.Value, 3), Round(_fast.Value), Round(_slow.Value), _sinceMs,
+        _basis, new RegimeThresholdsDto(_options.TrendAdx, _options.TrendEfficiency, _options.RangeAdx, _options.RangeEfficiency));
 
     /// <summary>The rule itself, on its inputs (null while warming up).</summary>
     public static TrendRegime Classify(
+        double? adx,
+        double? plusDi,
+        double? minusDi,
+        double? efficiency,
+        double? emaFast,
+        double? emaSlow,
+        RegimeOptions options) =>
+        Explain(adx, plusDi, minusDi, efficiency, emaFast, emaSlow, options).Trend;
+
+    /// <summary>The rule itself, with the test that decided it: the one place FR-56's thresholds are applied.</summary>
+    public static (TrendRegime Trend, RegimeBasis Basis) Explain(
         double? adx,
         double? plusDi,
         double? minusDi,
@@ -128,18 +166,20 @@ public sealed class RegimeTracker
         ArgumentNullException.ThrowIfNull(options);
         if (adx is not { } a || efficiency is not { } er || plusDi is not { } plus || minusDi is not { } minus)
         {
-            return TrendRegime.Unknown;
+            return (TrendRegime.Unknown, RegimeBasis.Warmup);
         }
 
         if (a >= options.TrendAdx && er >= options.TrendEfficiency)
         {
             var emaUp = emaFast is { } f && emaSlow is { } s ? f > s : (bool?)null;
-            return plus > minus && emaUp != false ? TrendRegime.TrendingUp
-                : minus > plus && emaUp != true ? TrendRegime.TrendingDown
-                : TrendRegime.Transition;
+            return plus > minus && emaUp != false ? (TrendRegime.TrendingUp, RegimeBasis.TrendMet)
+                : minus > plus && emaUp != true ? (TrendRegime.TrendingDown, RegimeBasis.TrendMet)
+                : (TrendRegime.Transition, RegimeBasis.DirectionDisagrees);
         }
 
-        return a <= options.RangeAdx && er <= options.RangeEfficiency ? TrendRegime.Ranging : TrendRegime.Transition;
+        return a <= options.RangeAdx && er <= options.RangeEfficiency
+            ? (TrendRegime.Ranging, RegimeBasis.RangeMet)
+            : (TrendRegime.Transition, RegimeBasis.Between);
     }
 
     private void OnBar(TradeBar bar)
@@ -155,7 +195,8 @@ public sealed class RegimeTracker
         _efficiency.Update(close);
         _fast.Update(close);
         _slow.Update(close);
-        var next = Classify(_adx.Value, _adx.PlusDi, _adx.MinusDi, _efficiency.Value, _fast.Value, _slow.Value, _options);
+        var (next, basis) = Explain(_adx.Value, _adx.PlusDi, _adx.MinusDi, _efficiency.Value, _fast.Value, _slow.Value, _options);
+        _basis = basis;
         if (next != _trend)
         {
             _trend = next;

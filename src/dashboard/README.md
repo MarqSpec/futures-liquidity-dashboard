@@ -147,7 +147,15 @@ Switching tabs does not re-run the route loader.
 
 Each product's summary carries one regime per bar timeframe (300 and 900 seconds by default), shown as
 `Trend ↑`, `Trend ↓`, `Range`, `Unclear` (the server's Transition) or `Warming n/m` while the bars warm up. The
-tooltip gives ADX, the efficiency ratio, the fast and slow EMAs (as prices) and since when the state has held. The
+Overview cell's tooltip gives ADX, the efficiency ratio, the fast and slow EMAs (as prices) and since when the state has held.
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-56.)* The status bar's 5m/15m badges explain themselves in their hint (hover, keyboard focus, or the ⓘ toggle on touch;
+`aria-describedby`, so a screen reader reads it with the badge): the verdict, a sentence naming the test that decided it
+beside the thresholds it was judged against, then ADX, the efficiency ratio, +DI, −DI, both EMAs and since when
+(`regimeExplanation` in `domain/regime.ts`). The server names the test (`basis`) and sends the limits (`thresholds`);
+the dashboard only prints them, each threshold exactly as sent and ADX and ±DI to 2 places and the efficiency ratio to 3,
+the precision the server rounds them to, so a value just short of a limit never prints as the limit. An older server that
+sends neither reads as "Limits not published by this server"; a `basis` this dashboard does not list reads as `Unknown`,
+and the hint says the server named a test it does not read rather than claiming one. The
 5m/15m marker reads **Agree** when both trend the same way or both range, **Conflict** when they trend opposite ways
 or one trends while the other ranges, and **Mixed** when either is unclear, warming up or missing. A trend name the
 dashboard does not know reads as warming, and a regime entry it cannot read is skipped, so the server can add

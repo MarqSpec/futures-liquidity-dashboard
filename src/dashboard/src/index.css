@@ -2965,7 +2965,7 @@ legend {
   color: var(--on-surface);
   font: 400 11px/15px var(--font-sans);
   pointer-events: none;
-  white-space: normal;
+  white-space: pre-line;
 }
 
 .hint-tip[hidden] {
