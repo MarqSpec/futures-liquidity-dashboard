@@ -1628,6 +1628,20 @@ p {
 .ld-signal--neutral .ld-dot { background: var(--bias-neutral); }
 .ld-signal--neutral .kind { color: var(--bias-neutral); }
 
+/* neighbouring icebergs as one row; its members open beneath it. */
+.ld-cluster-members {
+  grid-column: 1 / -1;
+  margin-top: var(--space-4);
+}
+
+.ld-cluster-members > summary {
+  cursor: pointer;
+  color: var(--on-surface-muted);
+  font: 400 11px/16px var(--font-sans);
+}
+
+.ld-cluster-members > .ld-list { margin-top: var(--space-4); }
+
 .ld-level {
   display: flex;
   align-items: center;
@@ -2354,6 +2368,16 @@ legend {
   grid-template-columns: 1fr 1fr;
   column-gap: 8px;
 }
+
+.iceberg-floors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
+.iceberg-floors label { display: inline-flex; align-items: center; gap: var(--space-4); }
+.iceberg-floors input { width: 7ch; }
+.signals-note { margin: var(--space-4) 0; font-size: 11px; }
 
 .rationale {
   white-space: pre-wrap;

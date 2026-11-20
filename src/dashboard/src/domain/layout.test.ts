@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  acceptStoredLayout,
   defaultLayout,
+  icebergFloors,
   isPaneOn,
   isSideSectionCollapsed,
   isSignalOn,
@@ -10,6 +12,7 @@ import {
   toLayout,
   watchlistLimit,
   withDetailChart,
+  withIcebergFloors,
   withIndicatorDockCollapsed,
   withPane,
   withPosition,
@@ -295,5 +298,44 @@ describe("withPosition", () => {
     const both = withPosition(withPosition(defaultLayout, "MCL", other), "MES", position);
 
     expect(withPosition(both, "MES", null).positions).toEqual({ MCL: other });
+  });
+});
+
+describe("icebergFloors", () => {
+  it("should hide nothing when the layout names no floors", () => {
+    expect(icebergFloors(defaultLayout)).toEqual({ minStrengthPercent: 0, minHiddenSize: 0 });
+    expect(icebergFloors(toLayout({}))).toEqual({ minStrengthPercent: 0, minHiddenSize: 0 });
+  });
+
+  it("should read the saved floors when the layout has them", () => {
+    expect(icebergFloors(toLayout({ icebergMinStrengthPercent: 60, icebergMinHiddenSize: 25 }))).toEqual({ minStrengthPercent: 60, minHiddenSize: 25 });
+  });
+
+  it("should fall back to no floor when a served floor is outside what the API accepts", () => {
+    expect(icebergFloors(toLayout({ icebergMinStrengthPercent: 101, icebergMinHiddenSize: -1 }))).toEqual({ minStrengthPercent: 0, minHiddenSize: 0 });
+    expect(icebergFloors(toLayout({ icebergMinStrengthPercent: 40.5 })).minStrengthPercent).toBe(0);
+  });
+
+  it("should refuse a stored layout whose floor is out of range and keep one that omits the floors", () => {
+    expect(acceptStoredLayout({ icebergMinHiddenSize: 100_001 })).toBeNull();
+    expect(acceptStoredLayout({})?.icebergMinStrengthPercent).toBe(0);
+  });
+});
+
+describe("withIcebergFloors", () => {
+  it("should save both floors when they are in range", () => {
+    const next = withIcebergFloors(defaultLayout, { minStrengthPercent: 45, minHiddenSize: 30 });
+
+    expect([next.icebergMinStrengthPercent, next.icebergMinHiddenSize]).toEqual([45, 30]);
+  });
+
+  it("should clamp and round a typed floor into the range the API accepts", () => {
+    expect(icebergFloors(withIcebergFloors(defaultLayout, { minStrengthPercent: 150, minHiddenSize: -5 }))).toEqual({ minStrengthPercent: 100, minHiddenSize: 0 });
+    expect(icebergFloors(withIcebergFloors(defaultLayout, { minStrengthPercent: 33.6, minHiddenSize: 200_000 }))).toEqual({ minStrengthPercent: 34, minHiddenSize: 100_000 });
+    expect(icebergFloors(withIcebergFloors(defaultLayout, { minStrengthPercent: Number.NaN, minHiddenSize: Number.NaN }))).toEqual({ minStrengthPercent: 0, minHiddenSize: 0 });
+  });
+
+  it("should return the same layout when the floors are unchanged", () => {
+    expect(withIcebergFloors(defaultLayout, { minStrengthPercent: 0, minHiddenSize: 0 })).toBe(defaultLayout);
   });
 });

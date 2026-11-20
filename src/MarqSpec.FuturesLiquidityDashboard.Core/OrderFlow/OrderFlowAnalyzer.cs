@@ -434,7 +434,8 @@ public sealed class OrderFlowAnalyzer
         Signals.Add(SignalKind.Iceberg, bid ? SignalBias.Bullish : SignalBias.Bearish, timeMs, iceberg.PriceTicks, iceberg.PriceTicks,
             iceberg.Confidence, bid ? "Inferred bid iceberg" : "Inferred offer iceberg",
             string.Create(CultureInfo.InvariantCulture,
-                $"{iceberg.Traded} traded against at most {iceberg.PeakDisplayed} shown, {iceberg.Refills} refills (avg {iceberg.AverageRefill}); hidden ≥ {iceberg.HiddenEstimate}. Inferred from prints and book changes, not exchange order ids."));
+                $"{iceberg.Traded} traded against at most {iceberg.PeakDisplayed} shown, {iceberg.Refills} refills (avg {iceberg.AverageRefill}); hidden ≥ {iceberg.HiddenEstimate}. Inferred from prints and book changes, not exchange order ids."),
+            iceberg.HiddenEstimate);
     }
 
     private void ReportSinglePrints(long timeMs)

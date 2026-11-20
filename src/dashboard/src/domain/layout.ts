@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { positionsSchema, storedPositionsSchema, type Position } from "./position.ts";
 import { signalKinds, type SignalKind } from "../api/schemas.ts";
+import type { IcebergFloors } from "./signalClusters.ts";
 
 /**
  * A product root as the API names it ("MES", "MNQ", "6E"). The list of products comes from GET /api/instruments;
@@ -191,6 +192,8 @@ export const layoutSchema = z.object({
   heatHighPercentile: z.number().min(1).max(100).catch(95),
   heatAutoContrast: z.boolean().catch(true),
   dotMinQuantity: z.number().int().min(1).max(10_000).catch(1),
+  icebergMinStrengthPercent: z.number().int().min(0).max(100).catch(0),
+  icebergMinHiddenSize: z.number().int().min(0).max(100_000).catch(0),
   eventDotSize: z.enum(eventDotSizes).catch("medium"),
   centerPrice: z.boolean().catch(false),
   indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).catch("volume"),
@@ -226,6 +229,8 @@ export const defaultLayout: LayoutSettings = {
   heatHighPercentile: 95,
   heatAutoContrast: true,
   dotMinQuantity: 1,
+  icebergMinStrengthPercent: 0,
+  icebergMinHiddenSize: 0,
   eventDotSize: "medium",
   centerPrice: false,
   indicatorPane: "volume",
@@ -268,6 +273,8 @@ export const storedLayoutSchema = z.object({
   heatHighPercentile: z.number().min(1).max(100).default(95),
   heatAutoContrast: z.boolean().default(true),
   dotMinQuantity: z.number().int().min(1).max(10_000).default(1),
+  icebergMinStrengthPercent: z.number().int().min(0).max(100).default(0),
+  icebergMinHiddenSize: z.number().int().min(0).max(100_000).default(0),
   eventDotSize: z.enum(eventDotSizes).default("medium"),
   centerPrice: z.boolean().default(false),
   indicatorPane: z.preprocess(withoutRetiredPane, z.enum(indicatorPanes)).default("volume"),
@@ -381,6 +388,28 @@ export function withSideSectionCollapsed(layout: LayoutSettings, section: SideSe
   }
   const next = collapsed ? [...layout.sideSectionsCollapsed, section] : layout.sideSectionsCollapsed.filter((key) => key !== section);
   return { ...layout, sideSectionsCollapsed: inColumnOrder(next) };
+}
+
+/** The Signals panel's iceberg floors on this layout (REQUIREMENTS.md FR-80). Zero hides nothing. */
+export function icebergFloors(layout: LayoutSettings): IcebergFloors {
+  return { minStrengthPercent: layout.icebergMinStrengthPercent, minHiddenSize: layout.icebergMinHiddenSize };
+}
+
+function wholeIn(value: number, max: number): number {
+  return Number.isFinite(value) ? Math.min(max, Math.max(0, Math.round(value))) : 0;
+}
+
+/**
+ * The layout with the iceberg floors set, each rounded and clamped to what the API accepts (0–100 percent, 0–100,000
+ * contracts), so a typed value never makes the save fail. The same layout comes back when nothing changes.
+ */
+export function withIcebergFloors(layout: LayoutSettings, floors: IcebergFloors): LayoutSettings {
+  const icebergMinStrengthPercent = wholeIn(floors.minStrengthPercent, 100);
+  const icebergMinHiddenSize = wholeIn(floors.minHiddenSize, 100_000);
+  if (layout.icebergMinStrengthPercent === icebergMinStrengthPercent && layout.icebergMinHiddenSize === icebergMinHiddenSize) {
+    return layout;
+  }
+  return { ...layout, icebergMinStrengthPercent, icebergMinHiddenSize };
 }
 
 /** The layout with one pane toggled. */

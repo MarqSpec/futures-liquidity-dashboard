@@ -348,6 +348,42 @@ public sealed partial class LayoutStoreTests
     }
 
     [Fact]
+    public void Validate_ShouldRejectAnIcebergFloor_WhenItIsOutsideItsRange()
+    {
+        new LayoutSettings { IcebergMinStrengthPercent = 0, IcebergMinHiddenSize = 0 }.Validate().Should().BeEmpty();
+        new LayoutSettings { IcebergMinStrengthPercent = 100, IcebergMinHiddenSize = 100_000 }.Validate().Should().BeEmpty();
+        foreach (var bad in new[] { -1, 101 })
+        {
+            new LayoutSettings { IcebergMinStrengthPercent = bad }.Validate()
+                .Should().Contain(error => error.Contains("IcebergMinStrengthPercent"), $"{bad} is not a percentage");
+        }
+
+        foreach (var bad in new[] { -1, 100_001 })
+        {
+            new LayoutSettings { IcebergMinHiddenSize = bad }.Validate()
+                .Should().Contain(error => error.Contains("IcebergMinHiddenSize"), $"{bad} is outside 0–100,000 contracts");
+        }
+    }
+
+    [Fact]
+    public void PreservingStoredOmissions_ShouldKeepTheIcebergFloors_WhenTheJsonOmitsThem()
+    {
+        new LayoutSettings().IcebergMinStrengthPercent.Should().Be(0, "no floor hides nothing, as before the floors existed");
+        new LayoutSettings().IcebergMinHiddenSize.Should().Be(0);
+        using var fresh = JsonDocument.Parse(JsonSerializer.Serialize(new LayoutSettings(), Json));
+        fresh.RootElement.GetProperty("icebergMinStrengthPercent").GetInt32().Should().Be(0);
+        fresh.RootElement.GetProperty("icebergMinHiddenSize").GetInt32().Should().Be(0);
+        var stored = new LayoutSettings { IcebergMinStrengthPercent = 60, IcebergMinHiddenSize = 25 };
+
+        var omitted = JsonSerializer.Deserialize<LayoutSettings>("""{"instrument":"MGC"}""", Json)!.PreservingStoredOmissions(stored);
+        (omitted.IcebergMinStrengthPercent, omitted.IcebergMinHiddenSize).Should().Be((60, 25), "an older client that omits the floors must not reset them");
+
+        var explicitDefault = JsonSerializer.Deserialize<LayoutSettings>("""{"icebergMinStrengthPercent":0,"icebergMinHiddenSize":0}""", Json)!
+            .PreservingStoredOmissions(stored);
+        (explicitDefault.IcebergMinStrengthPercent, explicitDefault.IcebergMinHiddenSize).Should().Be((0, 0), "an explicit default replaces the stored floor");
+    }
+
+    [Fact]
     public void PreservingStoredOmissions_ShouldKeepEachLaterField_WhenTheJsonOmitsIt()
     {
         var stored = new LayoutSettings

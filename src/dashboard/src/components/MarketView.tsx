@@ -6,10 +6,12 @@ import { aggregateCandles } from "../domain/candles.ts";
 import { formatTicks } from "../domain/format.ts";
 import { aggregateHeat } from "../domain/heat.ts";
 import {
+  icebergFloors,
   isPaneOn,
   isSideSectionCollapsed,
   isSignalOn,
   withDetailChart,
+  withIcebergFloors,
   withSideSectionCollapsed,
   type LayoutSettings,
   type PaneId,
@@ -323,7 +325,15 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
       <aside className="side-column" aria-label="Depth, liquidity and signals">
         {paneOn("ladder") && <DomLadder market={market} isKindOn={kindOn} fold={fold("ladder")} />}
         <LiquidityPanel liquidity={market.liquidity} spec={spec} nowMs={market.serverTimeMs} fold={fold("liquidity")} />
-        <SignalsPanel signals={market.orderFlow.signals} spec={spec} isKindOn={kindOn} onToggleKind={onToggleKind} fold={fold("signals")} />
+        <SignalsPanel
+          signals={market.orderFlow.signals}
+          spec={spec}
+          isKindOn={kindOn}
+          onToggleKind={onToggleKind}
+          floors={icebergFloors(layout)}
+          onFloors={onReading ? (floors) => onReading((current) => withIcebergFloors(current, floors)) : undefined}
+          fold={fold("signals")}
+        />
         <OverlayPanel overlay={market.overlay} spec={spec} shown={paneOn("overlay")} fold={fold("levels")} touches={market.levelTouches} />
         {showProfile && (
           <ProfilePanel

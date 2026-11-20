@@ -25,6 +25,20 @@ public sealed class OrderFlowAnalyzerTests
     }
 
     [Fact]
+    public void OnLevelChange_ShouldSendTheIcebergsHiddenLowerBound_WhenItLogsTheSignal()
+    {
+        var (analyzer, book) = Started();
+
+        PlayIcebergAndImbalance(analyzer, book, live: true);
+        analyzer.Advance(T0 + 60_000);
+
+        var iceberg = analyzer.Signals.All.Should().ContainSingle(s => s.Kind == SignalKind.Iceberg).Subject;
+        iceberg.HiddenEstimate.Should().NotBeNull().And.BeGreaterThan(0);
+        iceberg.Detail.Should().Contain($"hidden ≥ {iceberg.HiddenEstimate}", "the field and the text carry the same lower bound");
+        analyzer.Signals.All.Where(s => s.Kind != SignalKind.Iceberg).Should().OnlyContain(s => s.HiddenEstimate == null);
+    }
+
+    [Fact]
     public void Advance_ShouldLogAStackedBuyImbalance_WhenTheFootprintBarCloses()
     {
         var (analyzer, book) = Started();

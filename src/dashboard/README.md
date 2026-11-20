@@ -196,6 +196,18 @@ Flow as well. Detail's **Levels** side section (`components/OverlayPanel.tsx`) l
 highest first, with the same text, above the agent overlay; the price chart's level hover lines and the favorites
 menu's nearest-level line say it too. None of it is a forecast.
 
+### Signals panel
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-80, ARCHITECTURE.md D-66.)* Detail's Signals panel lists the signals newest first, one
+toggle per kind (a kind the server adds later has no toggle and is always listed). Its **Iceberg floors** (strength in percent, hidden size in contracts; 0 hides none) are saved on the
+layout and leave the icebergs below them out of this list only; each kind's toggle then says how many the floors hide
+(`n below floors`). Icebergs on one side, each within 4 ticks and 60 s of the previous one, are one row with the price
+range, the count, the summed hidden lower bound and the strongest member; **Show n icebergs** lists the members. The
+*inferred from prints and book changes, not exchange order ids* sentence is shown once, under the floors, while icebergs
+are on. The floors, the runs and the sentence are `src/domain/signalClusters.ts`; the chart, the ladder and the Overview
+are not filtered. A run closes once it has been idle longer than 60 s, and the rows are memoised on the signals,
+the kind toggles and the floors, so a 3-day history stays inside the frame budget.
+
 ## Products, the watchlist and depth
 
 The product list is not fixed in the dashboard: it comes from `GET /api/instruments` (seeded by the route loader,
@@ -292,7 +304,7 @@ and latency of `GET /api/instruments`. It is opt-in. It is not a CI gate.
 
 ## Layout settings
 
-The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`), the range-zone bars (`rangeZoneTimeframe`) and the pane and signal toggles are saved to
+The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`), the range-zone bars (`rangeZoneTimeframe`), the Signals panel's iceberg floors (`icebergMinStrengthPercent`, `icebergMinHiddenSize`) and the pane and signal toggles are saved to
 `PUT /api/layouts/me` and, on every change, to this browser's localStorage. The API keeps one revision counter per
 viewer in memory for the process. A PUT is accepted only when its `revision` is that counter; the response carries
 the next value. A mismatch answers 409 with the layout still stored. When that document was saved, the page shows

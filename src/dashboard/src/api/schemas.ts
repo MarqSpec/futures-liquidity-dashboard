@@ -151,6 +151,8 @@ export const signalSchema = z.object({
   strength: dbl,
   label: z.string(),
   detail: z.string(),
+  /** An iceberg's lower bound on its hidden size (FR-52). Absent on every other kind, and on an older server. */
+  hiddenEstimate: long.nullish(),
 });
 
 export const icebergSchema = z.object({

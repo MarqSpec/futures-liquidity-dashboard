@@ -95,22 +95,6 @@ export function eventsInWindow<T extends { readonly timeMs: number; readonly kin
   return shown;
 }
 
-/** The signals whose kind `isOn` accepts, newest first, at most `limit`. */
-export function visibleSignals(
-  signals: readonly Signal[],
-  isOn: (kind: string) => boolean,
-  limit = Number.POSITIVE_INFINITY,
-): Signal[] {
-  const result: Signal[] = [];
-  for (let i = signals.length - 1; i >= 0 && result.length < limit; i--) {
-    const signal = signals[i];
-    if (signal && isOn(signal.kind)) {
-      result.push(signal);
-    }
-  }
-  return result;
-}
-
 /** How many signals of each kind there are. */
 export function countByKind(signals: readonly Signal[]): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();

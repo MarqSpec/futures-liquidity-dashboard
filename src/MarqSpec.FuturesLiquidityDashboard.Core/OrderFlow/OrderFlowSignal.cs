@@ -34,6 +34,10 @@ public enum SignalBias
 /// <param name="PriceTicks">The level, or the low of a zone.</param>
 /// <param name="PriceHighTicks">The high of a zone; equal to <paramref name="PriceTicks"/> for a single level.</param>
 /// <param name="Strength">0–1: how far past its threshold the evidence went (the confidence for an iceberg).</param>
+/// <param name="HiddenEstimate">
+/// An iceberg's lower bound on its hidden size, the same number as "hidden ≥" in <paramref name="Detail"/>; null, and
+/// left out of the JSON, for every other kind (REQUIREMENTS.md FR-52, FR-62).
+/// </param>
 public sealed record OrderFlowSignal(
     long Id,
     SignalKind Kind,
@@ -43,7 +47,8 @@ public sealed record OrderFlowSignal(
     long PriceHighTicks,
     double Strength,
     string Label,
-    string Detail);
+    string Detail,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? HiddenEstimate = null);
 
 /// <summary>
 /// A named price. <see cref="SessionId"/> and <see cref="AsOfMs"/> are set for RIPS levels (REQUIREMENTS.md FR-63).
@@ -123,7 +128,8 @@ public sealed class SignalLog
         return taken;
     }
 
-    public OrderFlowSignal? Add(SignalKind kind, SignalBias bias, long timeMs, long low, long high, double strength, string label, string detail)
+    public OrderFlowSignal? Add(
+        SignalKind kind, SignalBias bias, long timeMs, long low, long high, double strength, string label, string detail, long? hiddenEstimate = null)
     {
         // Behind the newest time. Appending it leaves a stale tail and makes CountAfter stop early.
         if (_signals.Count > 0 && timeMs < _signals[^1].TimeMs)
@@ -133,7 +139,7 @@ public sealed class SignalLog
         }
 
         var signal = new OrderFlowSignal(++_lastId, kind, bias, timeMs, Math.Min(low, high), Math.Max(low, high),
-            Math.Round(Math.Clamp(strength, 0, 1), 3), label, detail);
+            Math.Round(Math.Clamp(strength, 0, 1), 3), label, detail, hiddenEstimate);
         _signals.Add(signal);
         Prune(timeMs);
         return signal;

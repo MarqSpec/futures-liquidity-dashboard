@@ -2,7 +2,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { chartKeyHint } from "../domain/chartCursor.ts";
-import { defaultLayout, withPane, withSignal } from "../domain/layout.ts";
+import { defaultLayout, withIcebergFloors, withPane, withSignal } from "../domain/layout.ts";
 import { fromSnapshot } from "../domain/merge.ts";
 import { defaultWindow } from "../domain/viewWindow.ts";
 import { createCrosshairStore } from "../hooks/crosshair.ts";
@@ -46,6 +46,15 @@ describe("MarketView", () => {
     const spoof = market.orderFlow.signals.find((s) => s.kind === "Spoof");
 
     expect(render()).not.toContain(spoof?.label);
+  });
+
+  it("should leave out an iceberg below the layout's strength floor and count it when the floor is saved", () => {
+    const iceberg = market.orderFlow.signals.find((s) => s.kind === "Iceberg");
+
+    expect(render()).toContain(iceberg?.label);
+    const floored = render(withIcebergFloors(defaultLayout, { minStrengthPercent: 40, minHiddenSize: 0 }));
+    expect(floored).not.toContain(iceberg?.label);
+    expect(floored).toContain("1 below floors");
   });
 
   it("should not list a signal when its kind is toggled off", () => {

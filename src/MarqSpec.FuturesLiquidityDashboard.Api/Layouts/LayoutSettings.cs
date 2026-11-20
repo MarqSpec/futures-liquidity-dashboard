@@ -191,6 +191,34 @@ public sealed record LayoutSettings
     private int _dotMinQuantity = 1;
 
     /// <summary>
+    /// The Signals panel lists an iceberg only at or above this strength, in whole percent, 0–100 (REQUIREMENTS.md FR-62).
+    /// Default 0, which hides none. Display only: detection, the chart and the Overview are not filtered.
+    /// A PUT that omits the property keeps the stored value.
+    /// </summary>
+    [Range(0, 100)]
+    public int IcebergMinStrengthPercent
+    {
+        get => _icebergMinStrengthPercent;
+        init => Set(nameof(IcebergMinStrengthPercent), ref _icebergMinStrengthPercent, value);
+    }
+
+    private int _icebergMinStrengthPercent;
+
+    /// <summary>
+    /// The Signals panel lists an iceberg only when its hidden lower bound is at least this many contracts, 0–100,000
+    /// (REQUIREMENTS.md FR-62). Default 0, which hides none. Display only, like <see cref="IcebergMinStrengthPercent"/>.
+    /// A PUT that omits the property keeps the stored value.
+    /// </summary>
+    [Range(0, 100_000)]
+    public int IcebergMinHiddenSize
+    {
+        get => _icebergMinHiddenSize;
+        init => Set(nameof(IcebergMinHiddenSize), ref _icebergMinHiddenSize, value);
+    }
+
+    private int _icebergMinHiddenSize;
+
+    /// <summary>
     /// Order Flow event-marker size: <c>small</c>, <c>medium</c> or <c>large</c> (REQUIREMENTS.md FR-67).
     /// Slice volume dots stay sized by print quantity.
     /// </summary>

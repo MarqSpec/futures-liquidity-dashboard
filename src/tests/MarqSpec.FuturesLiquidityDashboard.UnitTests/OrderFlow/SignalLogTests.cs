@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
 
 namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.OrderFlow;
@@ -223,6 +224,33 @@ public sealed class SignalLogTests
         var last = Add(log, SignalKind.Spoof, T0 + 1_000);
 
         log.All.Should().ContainSingle().Which.Should().Be(last);
+    }
+
+    [Fact]
+    public void Add_ShouldKeepTheHiddenEstimate_WhenOneIsGiven()
+    {
+        var log = Log();
+
+        var iceberg = log.Add(SignalKind.Iceberg, SignalBias.Bullish, T0, 100, 100, 0.5, "Inferred bid iceberg", "synthetic", hiddenEstimate: 42);
+        var stacked = Add(log, SignalKind.StackedImbalance, T0 + 1_000);
+
+        iceberg!.HiddenEstimate.Should().Be(42);
+        stacked.HiddenEstimate.Should().BeNull("only an iceberg has a hidden lower bound");
+    }
+
+    [Fact]
+    public void Serialize_ShouldOmitTheHiddenEstimate_WhenTheSignalHasNone()
+    {
+        var log = Log();
+        var iceberg = log.Add(SignalKind.Iceberg, SignalBias.Bullish, T0, 100, 100, 0.5, "Inferred bid iceberg", "synthetic", hiddenEstimate: 42);
+        var stacked = Add(log, SignalKind.StackedImbalance, T0 + 1_000);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+        using var withEstimate = JsonDocument.Parse(JsonSerializer.Serialize(iceberg, json));
+        using var without = JsonDocument.Parse(JsonSerializer.Serialize(stacked, json));
+
+        withEstimate.RootElement.GetProperty("hiddenEstimate").GetInt64().Should().Be(42);
+        without.RootElement.TryGetProperty("hiddenEstimate", out _).Should().BeFalse("a null would add bytes to every one of up to 20,000 signals");
     }
 
     private static SignalLog Log(long retentionMs = RetentionMs, int cap = 100) => new(retentionMs, cap);

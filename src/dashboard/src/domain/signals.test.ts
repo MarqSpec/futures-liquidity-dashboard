@@ -3,31 +3,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { color } from "../design/tokens.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { canvasTheme } from "../theme.ts";
-import { biasColors, countByKind, eventMarker, eventMarkers, eventsInWindow, visibleSignals } from "./signals.ts";
+import { biasColors, countByKind, eventMarker, eventMarkers, eventsInWindow } from "./signals.ts";
 
 const signals = snapshotFixture().orderFlow.signals;
-
-describe("visibleSignals", () => {
-  it("should list the signals newest first when every kind is on", () => {
-    const ids = visibleSignals(signals, () => true).map((s) => s.id);
-
-    expect(ids).toEqual([...signals.map((s) => s.id)].reverse());
-  });
-
-  it("should hide a kind when its toggle is off", () => {
-    const shown = visibleSignals(signals, (kind) => kind !== "Iceberg");
-
-    expect(shown.some((s) => s.kind === "Iceberg")).toBe(false);
-  });
-
-  it("should keep the other kinds when one toggle is off", () => {
-    expect(visibleSignals(signals, (kind) => kind !== "Iceberg")).toHaveLength(signals.length - 1);
-  });
-
-  it("should stop at the limit when one is given", () => {
-    expect(visibleSignals(signals, () => true, 3)).toHaveLength(3);
-  });
-});
 
 describe("eventMarker", () => {
   it("should draw spoof and trapped traders hollow, because both infer intent", () => {
