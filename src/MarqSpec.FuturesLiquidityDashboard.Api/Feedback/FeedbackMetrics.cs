@@ -26,7 +26,7 @@ public sealed class FeedbackMetrics : IDisposable
         _duration = _meter.CreateHistogram<double>("fld.feedback.duration", "ms", "Time a feedback model call took, by provider and outcome.");
         _tokens = _meter.CreateCounter<long>("fld.feedback.tokens", description: "Tokens the Claude calls used, by kind: input, output, cache-write, cache-read.");
         // No unit: the Prometheus exporter would append it, and the names already say USD (OBSERVABILITY.md §2).
-        _meter.CreateObservableGauge("fld.feedback.spend_usd", () => (double)budget.Current().SpentUsd, description: "This UTC month's Claude spend in US dollars, counted in memory since the process started.");
+        _meter.CreateObservableGauge("fld.feedback.spend_usd", () => (double)budget.Current().SpentUsd, description: "This UTC month's Claude spend in US dollars, kept in the budget file across restarts.");
         _meter.CreateObservableGauge("fld.feedback.budget_usd", () => (double)budget.Current().BudgetUsd, description: "The monthly cap in US dollars, Feedback:MonthlyBudgetUsd.");
     }
 

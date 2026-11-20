@@ -177,6 +177,19 @@ public sealed class FeedbackServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RequestAsync_ShouldPersistNothing_WhenTheProviderIsMock()
+    {
+        var disk = new FakeBudgetFiles();
+        A.CallTo(() => _model.Provider).Returns("mock");
+        Answers(FeedbackTestData.Reply("end_turn", FeedbackTestData.ValidOutput(), FeedbackTestData.Usage(input: 1_000_000)));
+        var service = Service(o => { o.Provider = FeedbackProvider.Mock; o.ApiKey = null; }, new FeedbackBudgetStore("/data/b.json", disk, _time, A.Fake<ILogger>()));
+
+        Answered(await service.RequestAsync("viewer", FeedbackTestData.LongLimit, FeedbackTestData.Metrics(), CancellationToken.None));
+
+        disk.Operations.Should().NotContain(o => o.StartsWith("write", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task RequestAsync_ShouldBeUnavailable_WhenFeedbackIsDisabled()
     {
         var outcome = await Service(o => o.Enabled = false).RequestAsync("viewer", FeedbackTestData.LongLimit, FeedbackTestData.Metrics(), CancellationToken.None);
@@ -334,12 +347,12 @@ public sealed class FeedbackServiceTests : IDisposable
     private static PlanFeedbackReply Answered(FeedbackOutcome outcome) =>
         outcome.Should().BeOfType<FeedbackOutcome.Answered>().Subject.Reply;
 
-    private FeedbackService Service(Action<FeedbackOptions>? configure = null)
+    private FeedbackService Service(Action<FeedbackOptions>? configure = null, FeedbackBudgetStore? store = null)
     {
         var options = new FeedbackOptions { Enabled = true, ApiKey = FeedbackTestData.SyntheticKey };
         configure?.Invoke(options);
         var wrapped = Options.Create(options);
-        _budget = new FeedbackBudget(_time, wrapped);
+        _budget = new FeedbackBudget(_time, wrapped, store);
         return new FeedbackService(
             wrapped,
             _model,

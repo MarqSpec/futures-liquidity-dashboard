@@ -38,8 +38,14 @@ public sealed class FeedbackOptions
     /// <summary>The whole call's deadline, retries included.</summary>
     public int TimeoutSeconds { get; set; } = 60;
 
-    /// <summary>The month's spend cap in US dollars, counted in memory and reset by a restart.</summary>
+    /// <summary>The month's spend cap in US dollars, counted from usage and kept in <see cref="BudgetStorePath"/>.</summary>
     public decimal MonthlyBudgetUsd { get; set; } = 100m;
+
+    /// <summary>
+    /// The JSON file that keeps the month, its spend and the cap across a restart: relative to the content root, or
+    /// absolute (the container sets <c>/data/feedback-budget.json</c>). Blank keeps the count in memory only. One replica.
+    /// </summary>
+    public string BudgetStorePath { get; set; } = "data/feedback-budget.json";
 
     /// <summary>Requests one viewer may start in any sliding minute.</summary>
     public int RequestsPerMinute { get; set; } = 6;

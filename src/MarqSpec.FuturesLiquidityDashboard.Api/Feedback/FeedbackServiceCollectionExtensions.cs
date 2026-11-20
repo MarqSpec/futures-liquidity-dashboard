@@ -28,8 +28,22 @@ public static class FeedbackServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<FeedbackOptions>, FeedbackOptionsValidator>();
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IFeedbackBudgetFiles, PhysicalFeedbackBudgetFiles>();
         services.AddHttpClient(ClaudeFeedbackModel.HttpClientName);
-        services.AddSingleton<FeedbackBudget>();
+        services.AddSingleton(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<FeedbackOptions>>();
+            var path = options.Value.BudgetStorePath;
+            var root = sp.GetService<IHostEnvironment>()?.ContentRootPath ?? AppContext.BaseDirectory;
+            var store = string.IsNullOrWhiteSpace(path)
+                ? null
+                : new FeedbackBudgetStore(
+                    Path.GetFullPath(path, root),
+                    sp.GetRequiredService<IFeedbackBudgetFiles>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<ILoggerFactory>().CreateLogger<FeedbackBudgetStore>());
+            return new FeedbackBudget(sp.GetRequiredService<TimeProvider>(), options, store);
+        });
         services.AddSingleton<FeedbackGate>();
         services.AddSingleton<FeedbackMetrics>();
         services.AddSingleton<ClaudeFeedbackModel>();

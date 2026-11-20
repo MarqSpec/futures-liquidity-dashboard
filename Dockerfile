@@ -40,6 +40,9 @@ LABEL org.opencontainers.image.title="MarqSpec.FuturesLiquidityDashboard.Api" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 COPY --from=build /app ./
+# The feedback budget file's directory: owned by the app user so a named volume mounted here is writable.
+RUN mkdir /data && chown $APP_UID /data
+ENV Feedback__BudgetStorePath=/data/feedback-budget.json
 # The base image's non-root user.
 USER $APP_UID
 EXPOSE 8080

@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 # Android signing keys. Release signing uses GitHub Actions secrets, never a file in the tree.
 *.jks
 *.keystore
+
+# The feedback budget file a local run writes.
+src/MarqSpec.FuturesLiquidityDashboard.Api/data/

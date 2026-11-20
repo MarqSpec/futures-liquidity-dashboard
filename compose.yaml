@@ -31,6 +31,9 @@ services:
       # Optional overrides (DEPLOYMENT.md). Unset keeps LevelsPerSide 50 and LadderLevels 40.
       Feed__ProjectX__LevelsPerSide: ${Feed__ProjectX__LevelsPerSide:-50}
       Engine__LadderLevels: ${Engine__LadderLevels:-40}
+    # One named volume at /data keeps the Claude feedback budget across a restart.
+    volumes:
+      - api-data:/data
 
   dashboard:
     image: futures-liquidity-dashboard-dashboard:dev
@@ -53,3 +56,6 @@ services:
       target: test
     # The tests run while the `test` stage builds; this only reports success.
     command: ["true"]
+
+volumes:
+  api-data:

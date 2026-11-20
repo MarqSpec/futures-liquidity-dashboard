@@ -8,6 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The feedback budget file is runtime data: never published, never in the image. -->
+    <Content Remove="data/**" />
+    <None Remove="data/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />

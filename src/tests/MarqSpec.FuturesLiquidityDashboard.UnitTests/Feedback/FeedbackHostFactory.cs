@@ -41,6 +41,7 @@ public sealed class FeedbackHostFactory : WebApplicationFactory<Program>
         ["Feedback:Provider"] = "Claude",
         ["Feedback:ApiKey"] = FeedbackTestData.SyntheticKey,
         ["Feedback:MaxRetries"] = "0",
+        ["Feedback:BudgetStorePath"] = string.Empty,
         ["ANTHROPIC_API_KEY"] = string.Empty,
     };
 
