@@ -2234,6 +2234,10 @@ table.compact tbody th {
   color: var(--on-surface-muted);
 }
 
+table.compact tbody th[scope="row"] {
+  white-space: nowrap;
+}
+
 .imbalance {
   position: relative;
   display: inline-block;
@@ -2254,6 +2258,46 @@ table.compact tbody th {
 
 .imbalance-ask {
   background: var(--ask);
+}
+
+.flow-net-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.flow-net {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 8px;
+  background: var(--surface-high);
+}
+
+.flow-net::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--outline);
+}
+
+.flow-net > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.flow-net-up {
+  background: var(--up);
+}
+
+.flow-net-down {
+  background: var(--down);
 }
 
 fieldset {

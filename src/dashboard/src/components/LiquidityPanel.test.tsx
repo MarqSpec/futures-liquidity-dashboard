@@ -58,4 +58,65 @@ describe("LiquidityPanel", () => {
   it("should leave a zero delta uncoloured when the delta is flat", () => {
     expect(render({ cumulativeDelta: 0, delta60s: 0 })).toMatch(/<dt>Cum\. delta<\/dt><dd>0<\/dd>/);
   });
+
+  describe("net liquidity flow", () => {
+    const flow = (over: Partial<Liquidity["flow10s"]>): Liquidity["flow10s"] => ({
+      ...market.liquidity.flow10s,
+      bidAdded: 0,
+      bidPulled: 0,
+      bidFilled: 0,
+      askAdded: 0,
+      askPulled: 0,
+      askFilled: 0,
+      netFlowBid: 0,
+      netFlowAsk: 0,
+      ...over,
+    });
+    const rowOf = (html: string, name: string) => html.match(new RegExp(`<tr><th scope="row">${name}</th>.*?</tr>`))?.[0] ?? "";
+
+    it("should print the server's net with its sign in the text when a side is building or thinning", () => {
+      const html = render({ flow10s: flow({ bidAdded: 100, bidPulled: 30, bidFilled: 20, netFlowBid: 70, askAdded: 10, askPulled: 45, askFilled: 5, netFlowAsk: -35 }) });
+
+      expect(rowOf(html, "bid 10s")).toContain(">+70<");
+      expect(rowOf(html, "ask 10s")).toContain(">−35<");
+    });
+
+    it("should draw the bar on the right for building and on the left for thinning, in the up and down colours", () => {
+      const html = render({ flow10s: flow({ netFlowBid: 70, netFlowAsk: -35 }) });
+
+      expect(rowOf(html, "bid 10s")).toMatch(/class="flow-net-up" style="width:50%;left:50%"/);
+      expect(rowOf(html, "ask 10s")).toMatch(/class="flow-net-down" style="width:25%;right:50%"/);
+      expect(rowOf(html, "bid 10s")).toContain("ld-up");
+      expect(rowOf(html, "ask 10s")).toContain("ld-down");
+    });
+
+    it("should scale each window to its own larger side when the two windows differ in size", () => {
+      const html = render({ flow10s: flow({ netFlowBid: 10, netFlowAsk: -5 }), flow60s: flow({ netFlowBid: -400, netFlowAsk: 100 }) });
+
+      expect(rowOf(html, "bid 10s")).toContain("width:50%");
+      expect(rowOf(html, "ask 60s")).toContain("width:12.5%");
+      expect(rowOf(html, "bid 60s")).toContain("width:50%");
+    });
+
+    it("should show a plain zero with no bar and no colour when a side's adds equal its pulls", () => {
+      const html = render({ flow10s: flow({ bidFilled: 50, netFlowBid: 0, netFlowAsk: 0 }) });
+
+      expect(rowOf(html, "bid 10s")).toContain(">0<");
+      expect(rowOf(html, "bid 10s")).not.toMatch(/flow-net-(up|down)|ld-up|ld-down/);
+    });
+
+    it("should not subtract fills when a side's resting size is eaten by trades", () => {
+      const html = render({ flow10s: flow({ bidAdded: 40, bidPulled: 10, bidFilled: 60, netFlowBid: 30 }) });
+
+      expect(rowOf(html, "bid 10s")).toContain(">+30<");
+      expect(rowOf(html, "bid 10s")).not.toContain("−30");
+    });
+
+    it("should state the definition on the column and beside the table", () => {
+      const html = render({});
+
+      expect(html).toMatch(/<th scope="col">net<span class="visually-hidden"> \(added minus pulled\)<\/span><\/th>/);
+      expect(html).toContain("net = added − pulled, fills not counted");
+    });
+  });
 });

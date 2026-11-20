@@ -18,9 +18,15 @@ public enum FlowKind
 /// <summary>Liquidity flow over a window, in contracts, by side of the resting order.</summary>
 public sealed record FlowTotals(long BidAdded, long BidPulled, long BidFilled, long AskAdded, long AskPulled, long AskFilled)
 {
+    /// <summary>FR-38's net, fill-adjusted: added − pulled − filled. Not the intent net below.</summary>
     public long NetBid => BidAdded - BidPulled - BidFilled;
 
     public long NetAsk => AskAdded - AskPulled - AskFilled;
+
+    /// <summary>Net liquidity flow (FR-76): added − pulled; filled is trade, not intent, so it is not part of it.</summary>
+    public long NetFlowBid => BidAdded - BidPulled;
+
+    public long NetFlowAsk => AskAdded - AskPulled;
 }
 
 /// <summary>

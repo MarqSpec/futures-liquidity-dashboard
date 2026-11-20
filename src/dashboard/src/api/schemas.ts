@@ -254,6 +254,9 @@ const flowTotalsSchema = z.object({
   askAdded: long,
   askPulled: long,
   askFilled: long,
+  // The server's added minus pulled (REQUIREMENTS.md FR-76), beside FR-38's fill-adjusted netBid and netAsk, which the panel does not draw.
+  netFlowBid: long,
+  netFlowAsk: long,
 });
 
 export const liquiditySchema = z.object({

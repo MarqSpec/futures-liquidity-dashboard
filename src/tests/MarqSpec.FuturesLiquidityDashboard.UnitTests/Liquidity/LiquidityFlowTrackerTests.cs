@@ -8,6 +8,7 @@ namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.Liquidity;
 public sealed class LiquidityFlowTrackerTests
 {
     private static readonly long T0 = TestData.EpochMs;
+    private static readonly System.Text.Json.JsonSerializerOptions Wire = new(System.Text.Json.JsonSerializerDefaults.Web);
 
     [Fact]
     public void OnLevelChange_ShouldRecordAnIncreaseAsAdded_WhenRestingSizeGrows()
@@ -63,5 +64,34 @@ public sealed class LiquidityFlowTrackerTests
         tracker.OnLevelChange(T0 + 100, new LevelChange(BookSide.Ask, 1000, 10, 6));
 
         tracker.Totals(T0 + 100, 10_000).AskPulled.Should().Be(4);
+    }
+
+    [Fact]
+    public void NetFlow_ShouldBeAddedMinusPulledPerSide_WhenAllThreeKindsAreRecorded()
+    {
+        var totals = new FlowTotals(BidAdded: 100, BidPulled: 30, BidFilled: 20, AskAdded: 10, AskPulled: 45, AskFilled: 5);
+
+        (totals.NetFlowBid, totals.NetFlowAsk).Should().Be((70L, -35L));
+    }
+
+    [Fact]
+    public void NetFlow_ShouldIgnoreFilled_WhenAFillIsTheOnlyChange()
+    {
+        var tracker = new LiquidityFlowTracker();
+        tracker.OnTrade(T0, TestData.Trade(T0, 1000, 4, BookSide.Bid, "f1"));
+        tracker.OnLevelChange(T0 + 100, new LevelChange(BookSide.Ask, 1000, 10, 6));
+
+        var totals = tracker.Totals(T0 + 100, 10_000);
+
+        (totals.AskFilled, totals.NetFlowAsk, totals.NetAsk).Should().Be((4L, 0L, -4L));
+    }
+
+    [Fact]
+    public void NetFlow_ShouldBeSerialisedBesideTheFr38Net_WhenTheTotalsAreSent()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new FlowTotals(100, 30, 20, 10, 45, 5), Wire);
+
+        json.Should().Contain("\"netFlowBid\":70").And.Contain("\"netFlowAsk\":-35").And.Contain("\"netBid\":50").And.Contain("\"netAsk\":-40");
     }
 }

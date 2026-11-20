@@ -153,6 +153,10 @@ or one trends while the other ranges, and **Mixed** when either is unclear, warm
 dashboard does not know reads as warming, and a regime entry it cannot read is skipped, so the server can add
 regime kinds later. Detail shows the selected product's two regimes in the status bar, from the same polled list.
 
+### Net liquidity flow
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-76.)* The Liquidity panel's flow table has a **net** column after added, pulled and filled: the server's `netFlowBid` or `netFlowAsk` for that side and window (added − pulled; a fill is not part of it), as a signed number and a small bar from a centre line, to the right (`flow-net-up`) for a side that is building and to the left (`flow-net-down`) for one that is thinning. The sign is the `+` or `−` in the text and the bar's side; the `up` and `down` colour is a third cue, and zero has no bar and no colour. A bar is scaled within its window to the larger of the two sides' magnitudes. The column heading says "(added minus pulled)" to a screen reader and a line under the table says it to everyone. The panel does not draw FR-38's fill-adjusted `netBid` and `netAsk`, which stay on the wire; the schema (`src/api/schemas.ts`) names only the new pair, and the client never computes either.
+
 ### Range zones
 
 *(2026-11-19, [a separate change], REQUIREMENTS.md FR-75, ARCHITECTURE.md D-62.)* The snapshot and its deltas carry, per regime
