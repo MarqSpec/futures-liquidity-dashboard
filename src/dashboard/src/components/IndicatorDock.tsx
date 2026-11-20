@@ -94,6 +94,11 @@ function warmupText(series: IndicatorSeries | undefined, latest: string): string
   return series.ready ? latest : `warming up (${series.seen}/${series.warmup})`;
 }
 
+/** A pane header's readout: each value after its name, e.g. "Line 1.25 · Signal 1.10" (REQUIREMENTS.md FR-20). */
+function named(values: readonly (readonly [name: string, value: string])[]): string {
+  return values.map(([name, value]) => `${name} ${value}`).join(" · ");
+}
+
 function step(selected: IndicatorPaneId, key: string): IndicatorPaneId | null {
   const index = indicatorPanes.indexOf(selected);
   if (key === "ArrowRight" || key === "ArrowDown") return indicatorPanes[(index + 1) % indicatorPanes.length] ?? selected;
@@ -186,7 +191,7 @@ export function IndicatorDock({ market, layout, candles, indicators, startMs, en
   } else if (selected === "rsi14") {
     const rsi = indicator("rsi14");
     const rsiPoints = seriesPoints(rsi, 1, 1, now);
-    const latest = (rsiPoints.at(-1)?.[1] ?? 0).toFixed(1);
+    const latest = named([["Value", (rsiPoints.at(-1)?.[1] ?? 0).toFixed(1)]]);
     body = (
       <TimePane
         label="RSI 14"
@@ -214,11 +219,18 @@ export function IndicatorDock({ market, layout, candles, indicators, startMs, en
     const macdLine = seriesPoints(macd, 1, spec.tickSize, now);
     const macdSignal = seriesPoints(macd, 2, spec.tickSize, now);
     const macdHist = seriesPoints(macd, 3, spec.tickSize, now);
-    const latest = `${priceFormat(macdLine.at(-1)?.[1] ?? 0)} / ${priceFormat(macdSignal.at(-1)?.[1] ?? 0)}`;
+    const values = (histogram: string) =>
+      named([
+        ["Line", priceFormat(macdLine.at(-1)?.[1] ?? 0)],
+        ["Signal", priceFormat(macdSignal.at(-1)?.[1] ?? 0)],
+        [histogram, priceFormat(macdHist.at(-1)?.[1] ?? 0)],
+      ]);
+    // Short on the chip so it fits a phone; the hidden summary always fits, so it spells the word out.
+    const latest = values("Hist");
     body = (
       <TimePane
         label="MACD 12/26/9"
-        summary={`MACD ${warmupText(macd, priceFormat(macdLine.at(-1)?.[1] ?? 0))}`}
+        summary={`MACD 12/26/9 ${warmupText(macd, values("Histogram"))}`}
         className="pane-fill"
         crosshair={crosshair}
         draw={(surface) =>
@@ -243,7 +255,7 @@ export function IndicatorDock({ market, layout, candles, indicators, startMs, en
   } else if (selected === "atr14") {
     const atr = indicator("atr14");
     const atrPoints = seriesPoints(atr, 1, spec.tickSize, now);
-    const latest = priceFormat(atrPoints.at(-1)?.[1] ?? 0);
+    const latest = named([["Value", priceFormat(atrPoints.at(-1)?.[1] ?? 0)]]);
     body = (
       <TimePane
         label="ATR 14"

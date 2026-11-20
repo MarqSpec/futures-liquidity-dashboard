@@ -115,6 +115,10 @@ in `src/test/fixtures/`.
   at their right (`axisWidth`), so a time sits at the same x on the dock as on the plot. The CVD tab draws the warmup
   stretch in the warmup grey and the live stretch in `up` or `down` by the sign of the session CVD, on both tabs, on a
   scale fitted to the CVD in view with the zero guide only when zero is in range (D-48, FR-22, FR-45, FR-61, FR-67, D-56, [a separate change]).
+  The RSI, MACD and ATR headers name each value they show, `MACD 12/26/9  Line 2.00 · Signal 0.75 · Hist 1.25`,
+  `RSI 14  Value 54.3` and `ATR 14  Value 2.25`, and say `warming up (n/N)` with no value until the series is ready.
+  `Hist` is short only on the chip, to fit a phone; the pane's hidden summary spells out `Histogram`
+  (FR-19, FR-20, FR-21, [a separate change]).
 - Hints: `components/Hint.tsx` explains a control that is not obvious from its label, in one sentence (D-47). It shows
   on hover and on keyboard focus, and on touch through an ⓘ button beside the control. The control references it
   with `aria-describedby`; Escape, blur and the pointer leaving hide it. It never uses a native `title`. To hint a
