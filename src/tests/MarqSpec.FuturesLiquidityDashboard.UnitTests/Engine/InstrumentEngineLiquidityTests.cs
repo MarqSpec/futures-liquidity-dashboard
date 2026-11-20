@@ -1,5 +1,6 @@
 using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
+using MarqSpec.FuturesLiquidityDashboard.Core.Liquidity;
 using MarqSpec.FuturesLiquidityDashboard.Core.Market;
 
 namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.Engine;
@@ -109,6 +110,81 @@ public sealed class InstrumentEngineLiquidityTests
         var liquidity = engine.Snapshot(60, null).Liquidity;
         liquidity.CumulativeDelta.Should().Be(3, "only the new session's print is counted");
         liquidity.SessionVolume.Should().Be(3);
+    }
+
+    [Fact]
+    public void Snapshot_ShouldListAnEndedWallWithFlowSplitByPrints_WhenAReportedWallIsTakenDown()
+    {
+        var engine = LiveEngine();
+        var wall = TestData.EsBase + 2;
+        engine.Apply(TestData.Depth(T0 + 100, BookSide.Ask, wall, 50));
+        engine.Snapshot(60, null).Liquidity.Walls.Should().ContainSingle(w => w.PriceTicks == wall);
+
+        engine.Apply(TestData.Trade(T0 + 1_000, wall, 20, BookSide.Bid, "w1"));
+        engine.Apply(TestData.Depth(T0 + 1_100, BookSide.Ask, wall, 0));
+
+        engine.Snapshot(60, null).Liquidity.EndedWalls.Should().ContainSingle().Which.Should().Match<EndedWall>(w =>
+            w.PriceTicks == wall && w.Filled == 20 && w.Pulled == 30 && w.StoodMs == 1_000 && w.Outcome == WallOutcome.Pulled);
+    }
+
+    [Fact]
+    public void Snapshot_ShouldListNoEndedWall_WhenANewDepthSnapshotReplacesTheBookTheWallStoodIn()
+    {
+        var engine = LiveEngine();
+        engine.Apply(TestData.Depth(T0 + 100, BookSide.Ask, TestData.EsBase + 2, 50));
+        engine.Snapshot(60, null);
+
+        engine.Apply(TestData.Snapshot(T0 + 1_000));
+
+        engine.Snapshot(60, null).Liquidity.EndedWalls.Should().BeEmpty();
+    }
+
+    // Regression, review 5982800707: a crossing bid removes the ask levels without a change, so FR-38 never saw 40 of the 50 go.
+    [Fact]
+    public void Snapshot_ShouldListNoEndedWall_WhenACrossingLevelRemovedTheWallUnseen()
+    {
+        var engine = LiveEngine();
+        var wall = TestData.EsBase + 2;
+        engine.Apply(TestData.Depth(T0 + 100, BookSide.Ask, wall, 50));
+        engine.Snapshot(60, null);
+        engine.Apply(TestData.Depth(T0 + 200, BookSide.Ask, wall, 40));
+        engine.Apply(TestData.Trade(T0 + 300, TestData.EsBase, 10, BookSide.Bid, "x1"));
+        engine.Apply(TestData.Trade(T0 + 300, TestData.EsBase + 1, 10, BookSide.Bid, "x2"));
+        engine.Apply(TestData.Trade(T0 + 300, wall, 40, BookSide.Bid, "x3"));
+
+        engine.Apply(TestData.Depth(T0 + 400, BookSide.Bid, wall, 5));
+        engine.Apply(TestData.Depth(T0 + 500, BookSide.Ask, wall, 0));
+
+        engine.Snapshot(60, null).Liquidity.EndedWalls.Should().BeEmpty();
+    }
+
+    // Regression, review 5983481702: churn had covered the peak, so a tally check passed though the last 60 left unseen.
+    [Fact]
+    public void Snapshot_ShouldListNoEndedWall_WhenAChurnedWallIsRemovedUnseenByACrossingLevel()
+    {
+        var engine = LiveEngine();
+        var wall = TestData.EsBase + 2;
+        var t = T0 + 100;
+        engine.Apply(TestData.Depth(t, BookSide.Ask, wall, 100));
+        engine.Snapshot(60, null);
+        for (var i = 0; i < 2; i++)
+        {
+            engine.Apply(TestData.Depth(t += 100, BookSide.Ask, wall, 70));
+            engine.Snapshot(60, null);
+            engine.Apply(TestData.Depth(t += 100, BookSide.Ask, wall, 100));
+            engine.Snapshot(60, null);
+        }
+
+        engine.Apply(TestData.Trade(t += 100, wall, 40, BookSide.Bid, "c1"));
+        engine.Apply(TestData.Depth(t += 100, BookSide.Ask, wall, 60));
+        engine.Snapshot(60, null);
+        engine.Apply(TestData.Trade(t += 100, TestData.EsBase, 10, BookSide.Bid, "c2"));
+        engine.Apply(TestData.Trade(t, TestData.EsBase + 1, 10, BookSide.Bid, "c3"));
+        engine.Apply(TestData.Trade(t, wall, 60, BookSide.Bid, "c4"));
+        engine.Apply(TestData.Depth(t += 100, BookSide.Bid, wall, 5));
+        engine.Apply(TestData.Depth(t += 100, BookSide.Ask, wall, 0));
+
+        engine.Snapshot(60, null).Liquidity.EndedWalls.Should().BeEmpty();
     }
 
     private static InstrumentEngine NewEngine() => new(InstrumentCatalog.MES, null, TestData.Calendar());

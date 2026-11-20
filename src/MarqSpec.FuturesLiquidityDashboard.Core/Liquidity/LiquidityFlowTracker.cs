@@ -29,6 +29,9 @@ public sealed record FlowTotals(long BidAdded, long BidPulled, long BidFilled, l
     public long NetFlowAsk => AskAdded - AskPulled;
 }
 
+/// <summary>How one decrease of resting quantity was split; both zero for an increase.</summary>
+public readonly record struct FlowSplit(long Filled, long Pulled);
+
 /// <summary>
 /// Classifies every change of resting quantity as added, pulled or filled. A decrease is first matched against
 /// executions just seen at that price on that side (a fill); the remainder is a pull. Keeps a bounded rolling
@@ -49,28 +52,30 @@ public sealed class LiquidityFlowTracker(long windowMs = 60_000, long fillMatchM
         _pendingFills[key] = (pending.Quantity + trade.Quantity, timeMs);
     }
 
-    public void OnLevelChange(long timeMs, LevelChange change)
+    /// <returns>How a decrease was split into filled and pulled, so a wall can keep its own tally (REQUIREMENTS.md FR-78).</returns>
+    public FlowSplit OnLevelChange(long timeMs, LevelChange change)
     {
         if (change.Delta > 0)
         {
             Record(timeMs, change.Side, FlowKind.Added, change.Delta);
-            return;
+            return default;
         }
 
         var removed = -change.Delta;
+        var matched = 0L;
         var key = (change.Side, change.PriceTicks);
         if (_pendingFills.TryGetValue(key, out var pending) && timeMs - pending.TimeMs <= fillMatchMs)
         {
-            var filled = Math.Min(removed, pending.Quantity);
-            Record(timeMs, change.Side, FlowKind.Filled, filled);
-            removed -= filled;
-            if (pending.Quantity - filled <= 0)
+            matched = Math.Min(removed, pending.Quantity);
+            Record(timeMs, change.Side, FlowKind.Filled, matched);
+            removed -= matched;
+            if (pending.Quantity - matched <= 0)
             {
                 _pendingFills.Remove(key);
             }
             else
             {
-                _pendingFills[key] = (pending.Quantity - filled, pending.TimeMs);
+                _pendingFills[key] = (pending.Quantity - matched, pending.TimeMs);
             }
         }
 
@@ -78,6 +83,8 @@ public sealed class LiquidityFlowTracker(long windowMs = 60_000, long fillMatchM
         {
             Record(timeMs, change.Side, FlowKind.Pulled, removed);
         }
+
+        return new FlowSplit(matched, removed);
     }
 
     public FlowTotals Totals(long nowMs, long windowMsOverride)

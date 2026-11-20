@@ -1,11 +1,14 @@
 import type { Liquidity } from "../api/schemas.ts";
-import { formatPercent, formatQty, formatSigned, formatTicks, type TickSpec } from "../domain/format.ts";
+import { formatAge, formatPercent, formatQty, formatSigned, formatTicks, type TickSpec } from "../domain/format.ts";
+import { endedWallTitle, outcomeLabel } from "../domain/walls.ts";
 import { SidePanel, type SideFold } from "./SidePanel.tsx";
 
 /** Props of the liquidity summary. */
 export interface LiquidityPanelProps {
   readonly liquidity: Liquidity;
   readonly spec: TickSpec;
+  /** Server time, to say how long ago a wall ended; without it the age is left out. */
+  readonly nowMs?: number;
   readonly fold?: SideFold;
 }
 
@@ -45,8 +48,11 @@ function NetFlow({ net, width }: { readonly net: number; readonly width: number 
   );
 }
 
-/** The liquidity metrics of REQUIREMENTS.md FR-36–FR-40, compactly: top of book, depth imbalance, flows, delta, walls. */
-export function LiquidityPanel({ liquidity: l, spec, fold }: LiquidityPanelProps) {
+/**
+ * The liquidity metrics of REQUIREMENTS.md FR-36–FR-40, compactly: top of book, depth imbalance, flows, delta, walls, and the
+ * walls that recently ended with how their size left (FR-78).
+ */
+export function LiquidityPanel({ liquidity: l, spec, nowMs, fold }: LiquidityPanelProps) {
   const share = bidShare(l.depth);
   const signed = (value: number | null | undefined) => (value == null || value === 0 ? undefined : value > 0 ? "ld-up" : "ld-down");
   return (
@@ -159,14 +165,34 @@ export function LiquidityPanel({ liquidity: l, spec, fold }: LiquidityPanelProps
         </tbody>
       </table>
       <p className="small-text muted">net = added − pulled, fills not counted</p>
-      {l.walls.length > 0 && (
+      {(l.walls.length > 0 || l.endedWalls.length > 0) && (
         <p className="small-text">
-          Walls:{" "}
-          {l.walls.map((w) => (
-            <span key={`${w.side}${w.priceTicks}`} className={w.side === "Bid" ? "bid-text" : "ask-text"}>
-              {formatTicks(w.priceTicks, spec)} ({formatQty(w.quantity)}, {Math.round(w.ageMs / 1000)} s){" "}
-            </span>
-          ))}
+          {l.walls.length > 0 && (
+            <>
+              Walls:{" "}
+              {l.walls.map((w) => (
+                <span key={`${w.side}${w.priceTicks}`} className={w.side === "Bid" ? "bid-text" : "ask-text"}>
+                  {formatTicks(w.priceTicks, spec)} ({formatQty(w.quantity)}, {Math.round(w.ageMs / 1000)} s){" "}
+                </span>
+              ))}
+            </>
+          )}
+          {l.endedWalls.length > 0 && (
+            <>
+              Ended:{" "}
+              {l.endedWalls.map((w) => (
+                <span
+                  key={`${w.side}${w.priceTicks}${w.endedMs}`}
+                  className={w.side === "Bid" ? "bid-text" : "ask-text"}
+                  title={endedWallTitle(w)}
+                >
+                  {formatTicks(w.priceTicks, spec)} {outcomeLabel(w.outcome)} after {formatAge(w.stoodMs)}
+                  {nowMs !== undefined && `, ${formatAge(Math.max(0, nowMs - w.endedMs))} ago`}
+                  {"; "}
+                </span>
+              ))}
+            </>
+          )}
         </p>
       )}
     </SidePanel>

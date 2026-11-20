@@ -199,7 +199,12 @@ then re-read every 2 s while the page is visible, paused while it is hidden). On
 toolbar and the product picker sit above the chart workspace, which fills the rest of the viewport; the loading placeholder occupies
 that same chart row until a snapshot arrives. The workspace is the chart column (main chart and indicator dock, D-39, D-55) beside a side column about 300 px wide
 (D-45): the depth ladder, the liquidity metrics, the signals, the levels and the Layers toggles, stacked and always visible,
-with the volume profile added when a profile window is on. It is a `flex-wrap` row, so under 900 px the column drops
+with the volume profile added when a profile window is on. *(2026-11-19, [a separate change], REQUIREMENTS.md FR-78, ARCHITECTURE.md D-64.)* The
+liquidity metrics' Walls line lists, after the standing walls, the last walls that ended (`Ended:` price, mostly filled,
+mostly pulled or below threshold, how long it stood and how long ago it ended; the title gives the side, the peak and the split),
+and the depth ladder marks each of their prices with ▯, adding an empty row inside a side's shown range when the level
+is gone (`src/domain/walls.ts`, `src/components/LiquidityPanel.tsx`, `src/components/DomLadder.tsx`). The words say how
+the size left, never why. It is a `flex-wrap` row, so under 900 px the column drops
 below the charts; above that it scrolls inside itself. The button at the right of the indicator dock's tab strip (*Indicator dock*,
 `aria-expanded`) collapses the dock to that strip, and the price chart takes the freed height; picking a tab expands
 it again. The choice is saved with the layout as `indicatorDockCollapsed` ([a separate change]). ~~The side column has no fold and no tab strip.~~ *(2026-11-15, [a separate change]: the column still has no fold or tab strip of its own, but each section in it folds to its heading. The heading is a button (`aria-expanded`, `aria-controls`) that folds the section's body away and keeps the heading in place; the profile's window picker folds with its section. The folded sections are saved with the layout as `sideSectionsCollapsed` (keys `ladder`, `liquidity`, `signals`, `levels`, `profile`, `layers`), every section open by default; `src/components/SidePanel.tsx` draws each section, D-49.)* The picker opens collapsed to one row (D-44): a

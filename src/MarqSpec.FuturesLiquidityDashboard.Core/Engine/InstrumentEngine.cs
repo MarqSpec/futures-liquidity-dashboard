@@ -978,6 +978,7 @@ public sealed class InstrumentEngine
                     _resubscribeAfterGap = false;
                     _book.ApplySnapshot(snapshot);
                     _flows.Reset();
+                    _walls.Reset();
                     _orderFlow.Invalidate();
                     SetEpoch(snapshot.Epoch);
                     NoteTop(snapshot);
@@ -986,7 +987,7 @@ public sealed class InstrumentEngine
                     NoteTop(update);
                     if (_book.Apply(update.Side, update.PriceTicks, update.Quantity) is { } change)
                     {
-                        _flows.OnLevelChange(t, change);
+                        _walls.OnLevelChange(change, _flows.OnLevelChange(t, change));
                         _orderFlow.OnLevelChange(t, change, _book);
                     }
 
@@ -2122,6 +2123,7 @@ public sealed class InstrumentEngine
             TradeRate = _recentTrades.Where(t => t.TimeMs > cutoff10).Sum(t => t.Quantity) / 10.0,
             SessionVolume = _sessionVolume,
             Walls = _walls.Detect(_nowMs, _book),
+            EndedWalls = _walls.Ended(_nowMs),
         };
     }
 

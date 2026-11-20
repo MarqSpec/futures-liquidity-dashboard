@@ -35,6 +35,19 @@ describe("snapshotSchema", () => {
   });
 });
 
+describe("liquiditySchema endedWalls", () => {
+  it("should read no ended walls when an older server sends none", () => {
+    expect(snapshotSchema.parse(rawSnapshot).liquidity.endedWalls).toEqual([]);
+  });
+
+  it("should keep an ended wall's outcome and timings when the server sends one", () => {
+    const snapshot = snapshotSchema.parse(rawSnapshot);
+    const wall = { side: "Ask", priceTicks: 27830, peakQuantity: 900, filled: 40, pulled: 860, stoodMs: 45_000, endedMs: 1, outcome: "Pulled" };
+
+    expect(snapshotSchema.parse({ ...snapshot, liquidity: { ...snapshot.liquidity, endedWalls: [wall] } }).liquidity.endedWalls).toEqual([wall]);
+  });
+});
+
 describe("deltaSchema", () => {
   it("should parse the captured delta when it is unchanged", () => {
     expect(deltaSchema.safeParse(rawDelta).success).toBe(true);

@@ -2,15 +2,27 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { Liquidity } from "../api/schemas.ts";
+import { formatTicks } from "../domain/format.ts";
 import { fromSnapshot } from "../domain/merge.ts";
 import { snapshotFixture } from "../test/fixtures.ts";
 import { LiquidityPanel } from "./LiquidityPanel.tsx";
 
 const market = fromSnapshot(snapshotFixture(), 5, 0);
 
-function render(change: Partial<Liquidity>): string {
-  return renderToString(<LiquidityPanel liquidity={{ ...market.liquidity, ...change }} spec={market.instrument} />).replaceAll("<!-- -->", "");
+function render(change: Partial<Liquidity>, nowMs?: number): string {
+  return renderToString(<LiquidityPanel liquidity={{ ...market.liquidity, ...change }} spec={market.instrument} nowMs={nowMs} />).replaceAll("<!-- -->", "");
 }
+
+const ended = (priceTicks: number, outcome: string, endedMs: number) => ({
+  side: "Bid",
+  priceTicks,
+  peakQuantity: 900,
+  filled: 700,
+  pulled: 200,
+  stoodMs: 45_000,
+  endedMs,
+  outcome,
+});
 
 const row = (levels: number, imbalance: number | null) => ({ levels, bid: 100, ask: 100, imbalance });
 
@@ -118,5 +130,25 @@ describe("LiquidityPanel", () => {
       expect(html).toMatch(/<th scope="col">net<span class="visually-hidden"> \(added minus pulled\)<\/span><\/th>/);
       expect(html).toContain("net = added − pulled, fills not counted");
     });
+  });
+
+  it("should list each ended wall with its outcome, how long it stood and how long ago it ended", () => {
+    const html = render({ walls: [], endedWalls: [ended(27060, "Filled", 1_000), ended(27050, "BelowThreshold", 0)] }, 121_000);
+
+    expect(html).toContain("Ended:");
+    expect(html).toContain(`${formatTicks(27060, market.instrument)} mostly filled after 45.0 s, 2 min ago`);
+    expect(html).toContain(`${formatTicks(27050, market.instrument)} below threshold after 45.0 s, 2 min ago`);
+    expect(html.indexOf(formatTicks(27060, market.instrument))).toBeLessThan(html.indexOf(formatTicks(27050, market.instrument)));
+  });
+
+  it("should leave out how long ago when no clock is given", () => {
+    const html = render({ walls: [], endedWalls: [ended(27060, "Pulled", 1_000)] });
+
+    expect(html).toContain(`${formatTicks(27060, market.instrument)} mostly pulled after 45.0 s`);
+    expect(html).not.toContain("ago");
+  });
+
+  it("should show no Ended part when no wall ended recently", () => {
+    expect(render({ endedWalls: [] })).not.toContain("Ended:");
   });
 });

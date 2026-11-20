@@ -262,6 +262,18 @@ const flowTotalsSchema = z.object({
   netFlowAsk: long,
 });
 
+/** A reported wall that stopped being one (REQUIREMENTS.md FR-78); `outcome` is Filled, Pulled or BelowThreshold. */
+export const endedWallSchema = z.object({
+  side: z.string(),
+  priceTicks: long,
+  peakQuantity: long,
+  filled: long,
+  pulled: long,
+  stoodMs: long,
+  endedMs: long,
+  outcome: z.string(),
+});
+
 export const liquiditySchema = z.object({
   bookKnown: z.boolean(),
   bestBid: long.nullish(),
@@ -278,6 +290,7 @@ export const liquiditySchema = z.object({
   tradeRate: dbl,
   sessionVolume: long,
   walls: z.array(z.object({ side: z.string(), priceTicks: long, quantity: long, ageMs: long })),
+  endedWalls: z.array(endedWallSchema).default([]),
   quoteTimeMs: long.nullish(),
   quoteStale: z.boolean().default(false),
 });
@@ -482,6 +495,7 @@ export type OrderFlow = z.infer<typeof orderFlowSchema>;
 export type Vwap = z.infer<typeof vwapSchema>;
 export type Ladder = z.infer<typeof ladderSchema>;
 export type Liquidity = z.infer<typeof liquiditySchema>;
+export type EndedWall = z.infer<typeof endedWallSchema>;
 export type Overlay = z.infer<typeof overlaySchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export type Delta = z.infer<typeof deltaSchema>;

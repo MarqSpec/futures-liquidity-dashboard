@@ -33,6 +33,21 @@ public sealed class LiquidityFlowTrackerTests
     }
 
     [Fact]
+    public void OnLevelChange_ShouldReturnHowTheDecreaseWasSplit_WhenARecentPrintMatchesPartOfIt()
+    {
+        var tracker = new LiquidityFlowTracker();
+        tracker.OnTrade(T0, TestData.Trade(T0, 1000, 4, BookSide.Bid, "s1"));
+
+        tracker.OnLevelChange(T0 + 100, new LevelChange(BookSide.Ask, 1000, 10, 0)).Should().Be(new FlowSplit(Filled: 4, Pulled: 6));
+    }
+
+    [Fact]
+    public void OnLevelChange_ShouldReturnNoSplit_WhenRestingSizeGrows()
+    {
+        new LiquidityFlowTracker().OnLevelChange(T0, new LevelChange(BookSide.Bid, 999, 10, 25)).Should().Be(default(FlowSplit));
+    }
+
+    [Fact]
     public void OnLevelChange_ShouldRecordTheWholeDecreaseAsPulled_WhenThePrintIsOlderThanTheMatchWindow()
     {
         var tracker = new LiquidityFlowTracker();

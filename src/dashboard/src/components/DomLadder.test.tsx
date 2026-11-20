@@ -68,4 +68,21 @@ describe("DomLadder", () => {
     expect(spread).toBeGreaterThan(lastAsk);
     expect(html).toContain("spread 1 ticks");
   });
+
+  it("should mark where an ended wall stood, adding an empty row when its level is gone", () => {
+    const wall = (priceTicks: number, outcome: string) => ({ side: "Bid", priceTicks, peakQuantity: 90, filled: 10, pulled: 80, stoodMs: 30_000, endedMs: 0, outcome });
+    const gapped = {
+      ...market,
+      ladder: { bids: [[100, 5], [98, 8]], asks: [[101, 4], [103, 2]] },
+      liquidity: { ...market.liquidity, walls: [], endedWalls: [wall(99, "Pulled"), wall(103, "Filled"), wall(90, "Pulled")] },
+    } as typeof market;
+
+    const html = renderToString(<DomLadder market={gapped} isKindOn={() => true} />).replaceAll("<!-- -->", "");
+    const gone = html.match(new RegExp(`<tr[^>]*>(?:(?!</tr>).)*bid-price">${formatTicks(99, market.instrument)}<.*?</tr>`))?.[0] ?? "";
+
+    expect(gone).toContain("ended bid wall, mostly pulled after 30.0 s");
+    expect(gone).toContain("▯");
+    expect(html).toContain("ended bid wall, mostly filled after 30.0 s");
+    expect(html).not.toContain(formatTicks(90, market.instrument));
+  });
 });
