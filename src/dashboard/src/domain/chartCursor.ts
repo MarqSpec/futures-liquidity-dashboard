@@ -261,9 +261,10 @@ function heatCell(column: HeatColumn | null, priceTicks: number): { bid: number;
   return found;
 }
 
+const formatWholeQty = new Intl.NumberFormat("en-US").format;
+const formatTenthQty = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format;
+
 function formatRawQty(value: number): string {
   const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded)
-    ? rounded.toLocaleString("en-US")
-    : rounded.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return Number.isInteger(rounded) ? formatWholeQty(rounded) : formatTenthQty(rounded);
 }

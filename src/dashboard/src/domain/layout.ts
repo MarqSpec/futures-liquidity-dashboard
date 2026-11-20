@@ -81,7 +81,8 @@ export type RangeZoneTimeframe = (typeof rangeZoneTimeframes)[number];
  * The Detail side-column sections that fold to their heading, in the column's order (ARCHITECTURE.md D-49).
  * The same keys as the API's `LayoutSettings.KnownSideSections`. Every section starts open.
  */
-export const sideSections = ["ladder", "liquidity", "signals", "levels", "profile", "layers"] as const;
+// — `conditions`, the Conditions section (REQUIREMENTS.md FR-81)
+export const sideSections = ["ladder", "conditions", "liquidity", "signals", "levels", "profile", "layers"] as const;
 export type SideSectionId = (typeof sideSections)[number];
 
 /** Known keys once each, in the column's order, so two equal sets always compare equal. */
@@ -116,6 +117,7 @@ export const paneIds = [
   "ladder",
   "overlay",
   "range-zones",
+  "line-tags",
 ] as const;
 export type PaneId = (typeof paneIds)[number];
 
@@ -134,7 +136,6 @@ const collapsedByDefault = new Set<string>([
   "profile-4h",
   "profile-5d",
   "tpo",
-  "overlay",
 ]);
 
 function knownFlags(keys: ReadonlySet<string>) {
@@ -298,7 +299,7 @@ export function acceptStoredLayout(value: unknown): LayoutSettings | null {
 }
 
 /**
- * Whether a pane is shown. The side profile and the overlay start collapsed; anything else, and a pane the server
+ * Whether a pane is shown. The side profile starts collapsed (the agent overlay, REQUIREMENTS.md FR-8, starts on); anything else, and a pane the server
  * adds later, starts on. An explicit layout value wins. Footprint, CVD, RSI, MACD, ATR and TPO are not stacked from
  * these flags: the Detail dock shows `indicatorPane` (REQUIREMENTS.md FR-22).
  */

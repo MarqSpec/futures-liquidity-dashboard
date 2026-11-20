@@ -171,6 +171,14 @@ public sealed partial class LayoutStoreTests
     }
 
     [Fact]
+    public void Validate_ShouldAcceptTheLineTagsLayer_WhenTheLayersToggleIsSaved()
+    {
+        new LayoutSettings { Panes = new() { ["line-tags"] = false } }.Validate().Should().BeEmpty();
+        new LayoutSettings { Panes = new() { ["line-tag"] = false } }.Validate()
+            .Should().Contain(error => error.Contains("line-tag"));
+    }
+
+    [Fact]
     public void Validate_ShouldRejectTheDetailChart_WhenItIsNeitherFootprintNorPrice()
     {
         new LayoutSettings { DetailChart = "footprint" }.Validate().Should().BeEmpty();
@@ -292,7 +300,7 @@ public sealed partial class LayoutStoreTests
     [Fact]
     public void Validate_ShouldAcceptEverySideSection_WhenTheKeysAreKnown()
     {
-        string[] every = ["ladder", "liquidity", "signals", "levels", "profile", "layers"];
+        string[] every = ["ladder", "conditions", "liquidity", "signals", "levels", "profile", "layers"];
 
         LayoutSettings.KnownSideSections.Should().BeEquivalentTo(every);
         new LayoutSettings { SideSectionsCollapsed = [.. every] }.Validate().Should().BeEmpty();

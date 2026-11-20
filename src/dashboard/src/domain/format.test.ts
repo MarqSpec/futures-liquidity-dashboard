@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatAge, formatChicagoTime, formatSigned, formatTicks, priceToTicks, ticksToPrice } from "./format.ts";
+import { formatAge, formatChicagoTime, formatQty, formatPercent, formatSigned, formatTicks, priceToTicks, ticksToPrice, wholePercent } from "./format.ts";
 
 const es = { tickSize: 0.25, priceDecimals: 2 };
 const gc = { tickSize: 0.1, priceDecimals: 1 };
@@ -60,5 +60,55 @@ describe("formatChicagoTime", () => {
 describe("formatAge", () => {
   it("should show seconds when the age is under a minute", () => {
     expect(formatAge(4200)).toBe("4.2 s");
+  });
+});
+
+// — a floor compares the percent the row shows
+describe("wholePercent", () => {
+  it("should round a half percent up, as the shown percent does", () => {
+    expect(wholePercent(0.395)).toBe(40);
+    expect(formatPercent(0.395)).toBe("40 %");
+  });
+
+  it("should round below a half percent down", () => {
+    expect(wholePercent(0.394)).toBe(39);
+  });
+});
+
+describe("formatQty", () => {
+  // Pinned from the toLocaleString implementation it replaced, so the shared formatter is byte-identical.
+  const table: readonly (readonly [number | null | undefined, string])[] = [
+    [0, "0"],
+    [-0, "-0"],
+    [0.4, "0"],
+    [0.5, "1"],
+    [-0.5, "-0"],
+    [-0.4, "-0"],
+    [1, "1"],
+    [-1, "-1"],
+    [7.5, "8"],
+    [-7.5, "-7"],
+    [999, "999"],
+    [1234, "1,234"],
+    [1234.5, "1,235"],
+    [-1234.5, "-1,234"],
+    [9999.4, "9,999"],
+    [9999.5, "10,000"],
+    [-9999.5, "-9,999"],
+    [10000, "10.0k"],
+    [-10000, "-10.0k"],
+    [12345, "12.3k"],
+    [999999.99, "1000.0k"],
+    [1_000_000, "1.00M"],
+    [-2_500_000, "-2.50M"],
+    [1_234_567.89, "1.23M"],
+    [Number.NaN, "—"],
+    [Number.POSITIVE_INFINITY, "—"],
+    [null, "—"],
+    [undefined, "—"],
+  ];
+
+  it.each(table)("should print %s as %s when the value is in the pinned table", (value, expected) => {
+    expect(formatQty(value)).toBe(expected);
   });
 });

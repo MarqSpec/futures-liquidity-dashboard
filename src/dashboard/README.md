@@ -61,7 +61,8 @@ in `src/test/fixtures/`.
 - `src/api/`: wire schemas (zod), the HTTP client and `MarketStream`, which orders snapshots and deltas by `seq`
   and resubscribes on a gap or reconnect.
 - `src/domain/`: pure logic, covering delta merge, sequencing, decoders, formatting, scales, the layout model, and
-  the picker's, Overview's and regime rules (`products.ts`, `overview.ts`, `regime.ts`, `tabs.ts`).
+  the picker's, Overview's and regime rules (`products.ts`, `overview.ts`, `regime.ts`, `tabs.ts`), and the Conditions
+  panel's fixed states (`conditions.ts`).
 - `src/components/`: the canvas panes (`draw*.ts`) and the panels around them.
 - Chart colour layer: every colour, on a canvas or in `index.css`, is read through the one override layer in
   `src/theme.ts` (`themeColor`), so a chart colour role keeps one meaning on every tab. To colour a new mark, read its
@@ -137,7 +138,7 @@ shown and total counts and a chip with a count for each feed status present (LIV
 holds the filter field, "Group by sector" (once a column is sorted) and, in the native shell, Change server. Each row
 has a watchlist star (the picker's: it keeps or drops the product's depth, and is disabled when the watchlist is full)
 beside the product's button, and shows the last price, the change from the session open with a ▲ or ▼, session high
-and low, volume, spread in ticks, trade rate, Δ60s and CVD with a direction arrow, the regime on 5- and 15-minute
+and low, volume, spread in ticks, trade rate (tagged `thin` while the tape is thin, FR-83), Δ60s and CVD with a direction arrow, the regime on 5- and 15-minute
 bars, whether those agree, the newest signal with its age and the count of signals in the last 15 minutes, and the
 feed's status (with `no DOM` where the server holds no depth). It is grouped like the picker (watchlist, then sectors,
 each heading counting its products) until a column header sorts it, which goes ascending, then descending, then back
@@ -168,6 +169,21 @@ regime kinds later. Detail shows the selected product's two regimes in the statu
 ### Net liquidity flow
 
 *(2026-11-19, [a separate change], REQUIREMENTS.md FR-76.)* The Liquidity panel's flow table has a **net** column after added, pulled and filled: the server's `netFlowBid` or `netFlowAsk` for that side and window (added − pulled; a fill is not part of it), as a signed number and a small bar from a centre line, to the right (`flow-net-up`) for a side that is building and to the left (`flow-net-down`) for one that is thinning. The sign is the `+` or `−` in the text and the bar's side; the `up` and `down` colour is a third cue, and zero has no bar and no colour. A bar is scaled within its window to the larger of the two sides' magnitudes. The column heading says "(added minus pulled)" to a screen reader and a line under the table says it to everyone. The panel does not draw FR-38's fill-adjusted `netBid` and `netAsk`, which stay on the wire; the schema (`src/api/schemas.ts`) names only the new pair, and the client never computes either.
+
+### Conditions
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-81, ARCHITECTURE.md D-67.)* Detail's side column has a **Conditions** section after the
+depth ladder (`components/ConditionsPanel.tsx`): eight fixed rows, in this order, each with its name, what it reads, the
+values it compared and its definition. Price vs VWAP, Price vs POC and Price vs value area compare the current book: above
+when the best bid is over the level, below when the best ask is under it, at when the level is within the spread (for the
+value area, inside when bid and ask are both within VAL–VAH). EMA 13 vs EMA 48, RSI 14 vs 50 and MACD vs its signal line
+read the last closed value of the layout's indicator timeframe, never the developing one. Compared values print at the
+instrument's places, or with up to six more when two unequal values would otherwise print the same. The 5m and 15m regimes are the
+server's, from the polled summary (`DashboardRoute` hands them to `MarketView`); the browser classifies nothing. A reading
+that is not a state (`warming n/m`, `partial`, `stale quote`, `no quote`, `not published`, `no closed value`, `no VWAP
+yet`, `no session profile`) is muted and italic, and its `data-reading` names its kind. States are uncoloured text, and a
+note under the list says they carry no score, forecast or suggested action. The rules are `domain/conditions.ts`
+(`conditionsFor`); nothing new comes over the wire.
 
 ### Range zones
 
@@ -202,11 +218,35 @@ menu's nearest-level line say it too. None of it is a forecast.
 toggle per kind (a kind the server adds later has no toggle and is always listed). Its **Iceberg floors** (strength in percent, hidden size in contracts; 0 hides none) are saved on the
 layout and leave the icebergs below them out of this list only; each kind's toggle then says how many the floors hide
 (`n below floors`). Icebergs on one side, each within 4 ticks and 60 s of the previous one, are one row with the price
-range, the count, the summed hidden lower bound and the strongest member; **Show n icebergs** lists the members. The
+range, the count, the summed hidden lower bound and the strongest member; **Show n icebergs** lists the members. A closed row mounts no members: they render when it is opened and unmount when it is closed, at most 50 (`MEMBER_LIST_LIMIT`) with a `+N more` line (`+N more rows` in a group, which counts rows, not signals), and the row components are memoised, with a row whose signals did not change (the same `Signal` objects, not merely the same ids, which restart from 1 when the server does) keeping its object between renders so a stream update or an unrelated signal does not re-render it ([a separate change]). The
 *inferred from prints and book changes, not exchange order ids* sentence is shown once, under the floors, while icebergs
 are on. The floors, the runs and the sentence are `src/domain/signalClusters.ts`; the chart, the ladder and the Overview
 are not filtered. A run closes once it has been idle longer than 60 s, and the rows are memoised on the signals,
-the kind toggles and the floors, so a 3-day history stays inside the frame budget.
+the kind toggles and the floors, so a 3-day history stays inside the frame budget. The strength floor compares
+the whole percent a row shows, so an iceberg read as `40 %` passes a 40 floor *(2026-11-19, [a separate change], answering a review note on [a separate change] for [a separate change])*.
+
+*([a separate change], REQUIREMENTS.md FR-82, ARCHITECTURE.md D-69.)* Signals of two or more kinds whose prices lie within 6 ticks of one
+another and whose times lie within 5 minutes of the first are one **group** row: the kinds with their own strengths,
+the price range, the time span and the count, with no bias colour or verdict; **Show n signals** lists the members
+(an iceberg cluster is one). Signals of one kind never group, and the kind toggles and floors apply first. While the
+pointer or focus is on a group row the main chart shades its price range (`components/GroupBand.tsx`); **Mark on
+chart** keeps it shaded until pressed again, the instrument changes or the group is no longer listed. `MarketView`
+holds only the group's key (its first signal in time) and looks its current range up in the rows `useSignalRows`
+lists, so the shading follows the group as it grows and goes when it goes.
+
+Detail's price chart names its overlay lines on the price axis (`components/drawLineTags.ts`, `domain/lineTags.ts`; [a separate change], REQUIREMENTS.md FR-77, D-63): one tag per visible line, the session VWAP and its ±1σ and ±2σ bands and each shown EMA, at the price the drawn line has at the chart's right edge (the developing value at the live edge, or the line's interpolated value there when panned back; an EMA with no visible segment of its line has no tag; `emaPath` decides both), in the column the last-price, bid and ask tags use. A tag is a chip with the words in the strong ink and the line's token as a bar and outline; an EMA still warming up reads `EMA48 warm`. Tags that would overlap each other or those price tags stack apart, and a line outside the visible price range has none. The Layers toggle **Line tags on the price axis** (the `line-tags` pane flag, on by default) turns them off and is saved on the layout. The footprint chart draws no EMAs and Order Flow already names its VWAP guide, so neither changes. The agent Levels (the `overlay` pane) are on by default too, so the Levels panel shows them instead of "Hidden on the chart"; a layout that saved `overlay` false keeps them off.
+
+### Thin tape
+
+*(2026-11-19, [a separate change], REQUIREMENTS.md FR-83, ARCHITECTURE.md D-70.)* The server judges each product's tape against its own
+recent median trade rate and sends `tape` (`state`, `rate`, `baselineRate`, `thinBelowRate`, `baselineMinutes`) on
+`liquidity` and on the Overview summary, and `thinTape: true` on a signal raised while the tape was thin. The client
+recomputes nothing: `src/domain/tape.ts` words the state and the hint from the server's numbers. The Liquidity panel
+shows **Tape** (`active`, `thin` or `no reading`) under the trade rate, with the rate, the median and the limit in its
+hint; the Overview's Rate cell carries a `thin` tag. A thin-tape signal's row in the Signals panel is tagged
+**thin tape** and its dot and kind dimmed, an iceberg cluster or a multi-kind group (FR-82) says how many of its signals were, and its marker on the Detail
+price chart and on Order Flow is drawn at `THIN_TAPE_ALPHA`; the price chart's hover adds `thin tape when raised`.
+Nothing is hidden, and the words describe activity, never direction.
 
 ## Products, the watchlist and depth
 
@@ -214,16 +254,16 @@ The product list is not fixed in the dashboard: it comes from `GET /api/instrume
 then re-read every 2 s while the page is visible, paused while it is hidden). On Detail the status bar, the chart
 toolbar and the product picker sit above the chart workspace, which fills the rest of the viewport; the loading placeholder occupies
 that same chart row until a snapshot arrives. The workspace is the chart column (main chart and indicator dock, D-39, D-55) beside a side column about 300 px wide
-(D-45): the depth ladder, the liquidity metrics, the signals, the levels and the Layers toggles, stacked and always visible,
+(D-45): the depth ladder, the conditions, the liquidity metrics, the signals, the levels and the Layers toggles, stacked and always visible,
 with the volume profile added when a profile window is on. *(2026-11-19, [a separate change], REQUIREMENTS.md FR-78, ARCHITECTURE.md D-64.)* The
 liquidity metrics' Walls line lists, after the standing walls, the last walls that ended (`Ended:` price, mostly filled,
 mostly pulled or below threshold, how long it stood and how long ago it ended; the title gives the side, the peak and the split),
 and the depth ladder marks each of their prices with ▯, adding an empty row inside a side's shown range when the level
-is gone (`src/domain/walls.ts`, `src/components/LiquidityPanel.tsx`, `src/components/DomLadder.tsx`). The words say how
+is gone (`src/domain/walls.ts`, `src/components/LiquidityPanel.tsx`, `src/components/DomLadder.tsx`). The depth ladder follows the inside of the book ([a separate change], REQUIREMENTS.md FR-36): a layout effect centres the spread row in the ladder's own scroll box (never the page) on every update, with at most one scroll write, so rows added or removed above it do not move it. The component tells its own write from a viewer's scroll by position (recorded after every update, even when no write was needed, and `overflow-anchor: none` on the box so the browser does not shift it), so a wheel, drag or keyboard scroll pauses following (the box takes Tab focus, and a wheel, a navigation key or a press in the box pauses at once, before the scroll event) and the **Centre** button, always drawn and disabled while following, is enabled; it re-centres, returns focus to the ladder without scrolling the page, and resumes. The words say how
 the size left, never why. It is a `flex-wrap` row, so under 900 px the column drops
 below the charts; above that it scrolls inside itself. The button at the right of the indicator dock's tab strip (*Indicator dock*,
 `aria-expanded`) collapses the dock to that strip, and the price chart takes the freed height; picking a tab expands
-it again. The choice is saved with the layout as `indicatorDockCollapsed` ([a separate change]). ~~The side column has no fold and no tab strip.~~ *(2026-11-15, [a separate change]: the column still has no fold or tab strip of its own, but each section in it folds to its heading. The heading is a button (`aria-expanded`, `aria-controls`) that folds the section's body away and keeps the heading in place; the profile's window picker folds with its section. The folded sections are saved with the layout as `sideSectionsCollapsed` (keys `ladder`, `liquidity`, `signals`, `levels`, `profile`, `layers`), every section open by default; `src/components/SidePanel.tsx` draws each section, D-49.)* The picker opens collapsed to one row (D-44): a
+it again. The choice is saved with the layout as `indicatorDockCollapsed` ([a separate change]). ~~The side column has no fold and no tab strip.~~ *(2026-11-15, [a separate change]: the column still has no fold or tab strip of its own, but each section in it folds to its heading. The heading is a button (`aria-expanded`, `aria-controls`) that folds the section's body away and keeps the heading in place; the profile's window picker folds with its section. The folded sections are saved with the layout as `sideSectionsCollapsed` (keys `ladder`, `conditions` *(2026-11-19)*, `liquidity`, `signals`, `levels`, `profile`, `layers`), every section open by default; `src/components/SidePanel.tsx` draws each section, D-49.)* The picker opens collapsed to one row (D-44): a
 *Products n* button, the watched products as small buttons (a star and the root; the name, last price and change are
 in each button's tooltip) and the filter field at the right. The button expands it, and typing in the filter expands it
 too. Expanded, it lists every product, the watchlist first and the rest by sector, with the last price, the change from
@@ -306,9 +346,10 @@ and latency of `GET /api/instruments`. It is opt-in. It is not a CI gate.
 
 The selected product, the interval, the history window, the watchlist, the main chart (`detailChart`), the range-zone bars (`rangeZoneTimeframe`), the Signals panel's iceberg floors (`icebergMinStrengthPercent`, `icebergMinHiddenSize`) and the pane and signal toggles are saved to
 `PUT /api/layouts/me` and, on every change, to this browser's localStorage. The API keeps one revision counter per
-viewer in memory for the process. A PUT is accepted only when its `revision` is that counter; the response carries
+viewer ~~in memory for the process~~ *(2026-11-19, [a separate change], D-18: with the layout, in one file that survives an API restart)*. A PUT is accepted only when its `revision` is that counter; the response carries
 the next value. A mismatch answers 409 with the layout still stored. When that document was saved, the page shows
 it. When the server has nothing saved, the page keeps its local layout and puts it again at the revision in the
-409. After a restart `GET /api/layouts/me` reports `saved: false` and `revision` 0, and the page puts
-a local copy back only when the stored document matches the layout schema. The chart toolbar shows which store the
+409. ~~After a restart~~ *(2026-11-19, [a separate change]: when the store has nothing for the viewer, because they never saved or its file was lost or corrupt)* `GET /api/layouts/me` reports `saved: false` and `revision` 0, and the page puts
+a local copy back only when the stored document matches the layout schema. A save the server cannot write answers 503
+`layout-store-unavailable`; the page keeps it pending at the revision it cited and sends it again on the next edit or load. The chart toolbar shows which store the
 last successful read or write used.

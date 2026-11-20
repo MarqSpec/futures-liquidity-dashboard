@@ -11,7 +11,10 @@ import { snapshotFixture } from "../test/fixtures.ts";
 import { mainChartDrawKey } from "./chartDrawKey.ts";
 import { FOOTPRINT_DELTA_STRIP, FOOTPRINT_GROUND, drawFootprint, footprintCacheKey, splitCellAlpha, type FootprintModel } from "./drawFootprint.ts";
 import { HISTORY_WITHOUT_TAPE, TAPE_STARTS_HERE } from "../domain/volumeDots.ts";
+import { formatChicagoTime, formatLocalTime, formatPercent, formatTickRange } from "../domain/format.ts";
 import { canvasTheme, colors } from "../theme.ts";
+import { THIN_TAPE_ALPHA } from "../domain/tape.ts";
+import { biasColors } from "../domain/signals.ts";
 import { TIME_AXIS_HEIGHT, drawMainChart, type MainChartModel } from "./drawMainChart.ts";
 
 const market = fromSnapshot(snapshotFixture(), 5, 0);
@@ -59,6 +62,55 @@ describe("drawMainChart", () => {
     const geometry = drawMainChart(surface, model({ vwap: false, levelTouches }));
 
     expect(geometry.markers.find((m) => m.title === "Key level · PDH")?.lines).toEqual(["6875.00", "2 touches · 1 held · 1 broke"]);
+  });
+
+  // (REQUIREMENTS.md FR-83)
+  it("should dim a signal raised on a thin tape and say so in its hover lines", () => {
+    const [first] = market.orderFlow.signals.filter((s) => s.kind === "Iceberg" && s.timeMs >= market.serverTimeMs - 5 * 60_000);
+    if (!first) throw new Error("the fixture has no iceberg in view");
+    const drawThin = (thinTape: boolean) => {
+      const { surface, calls } = fakeSurface();
+      const geometry = drawMainChart(surface, model({ signals: [{ ...first, thinTape }], overlay: false, vwap: false, heatmap: false }));
+      const diamond = calls.filter((c) => c.method === "fill" && c.fillStyle === biasColors[first.bias]).at(-1);
+      return { alpha: diamond?.globalAlpha, lines: geometry.markers.find((m) => m.title.endsWith(first.label))?.lines ?? [] };
+    };
+
+    const thin = drawThin(true);
+    const active = drawThin(false);
+
+    expect(thin.alpha).toBe(THIN_TAPE_ALPHA);
+    expect(active.alpha).toBe(1);
+    expect(thin.lines.at(-1)).toBe("thin tape when raised");
+    expect(active.lines).not.toContain("thin tape when raised");
+  });
+
+  it("should build a signal's tooltip text only when its marker is read, and once", () => {
+    const [first] = market.orderFlow.signals.filter((s) => s.kind === "Iceberg" && s.timeMs >= market.serverTimeMs - 5 * 60_000);
+    if (!first) throw new Error("the fixture has no iceberg in view");
+    let reads = 0;
+    const counted = {
+      ...first,
+      get detail() {
+        reads += 1;
+        return first.detail;
+      },
+    };
+    const { surface } = fakeSurface();
+
+    const geometry = drawMainChart(surface, model({ signals: [counted], overlay: false, vwap: false, heatmap: false }));
+    const drawn = reads;
+    const marker = geometry.markers.find((m) => m.title.endsWith(first.label));
+    const lines = marker?.lines;
+    void marker?.lines;
+
+    expect(drawn).toBe(0);
+    expect(reads).toBe(1);
+    expect(lines).toEqual([
+      `${formatLocalTime(first.timeMs)} · ${formatChicagoTime(first.timeMs)}`,
+      formatTickRange(first.priceTicks, first.priceHighTicks, market.instrument),
+      first.detail,
+      `strength ${formatPercent(first.strength)}`,
+    ]);
   });
 
   it("should draw no signal marker when the signals are filtered out", () => {
@@ -512,6 +564,65 @@ describe("mainChartDrawKey", () => {
     const next = model({ heatmap: false, startMs: 0, endMs: 120_000, heatColumns: changed });
 
     expect(mainChartDrawKey(next, 800, 400)).toBe(mainChartDrawKey(base, 800, 400));
+  });
+});
+
+describe("mainChartDrawKey prints and signals", () => {
+  // Prints and signals are append-only and capped at the head, so the key reads counts and the ends, not every row.
+  const prints = Array.from({ length: 6 }, (_, i) => ({ sourceTimeMs: 1_000 + i * 10, priceTicks: 27_000 + i, quantity: 1 + i, aggressor: "Buy", sequence: 100 + i }));
+  const signals = market.orderFlow.signals.slice(0, 5);
+  const extra = { ...(market.orderFlow.signals[0] as (typeof signals)[number]), id: 90_001, timeMs: market.serverTimeMs };
+  const keyOf = (nextPrints: typeof prints, nextSignals: typeof signals) =>
+    mainChartDrawKey(model({ market: { ...market, prints: nextPrints }, signals: nextSignals }), 800, 400);
+  const base = () => keyOf(prints, signals);
+  const last = <T,>(rows: readonly T[]): T => rows[rows.length - 1] as T;
+
+  it("should change when a print is appended", () => {
+    const next = [...prints, { ...last(prints), sequence: 200, sourceTimeMs: 2_000 }];
+
+    expect(keyOf(next, signals)).not.toBe(base());
+  });
+
+  it("should change when the newest print is replaced and the count stays", () => {
+    const next = [...prints.slice(0, -1), { ...last(prints), quantity: 99 }];
+
+    expect(keyOf(next, signals)).not.toBe(base());
+  });
+
+  it("should change when the oldest print is capped off as another arrives", () => {
+    const next = [...prints.slice(1), { ...last(prints), sequence: 200 }];
+
+    expect(next.length).toBe(prints.length);
+    expect(keyOf(next, signals)).not.toBe(base());
+  });
+
+  it("should change when a signal is appended", () => {
+
+    expect(keyOf(prints, [...signals, extra])).not.toBe(base());
+  });
+
+  it("should change when the newest signal's detail changes", () => {
+    const next = [...signals.slice(0, -1), { ...last(signals), detail: "revised" }];
+
+    expect(keyOf(prints, next)).not.toBe(base());
+  });
+
+  it("should change when the oldest signal is dropped as another arrives", () => {
+    const next = [...signals.slice(1), extra];
+
+    expect(next.length).toBe(signals.length);
+    expect(keyOf(prints, next)).not.toBe(base());
+  });
+
+  it("should not change when equal copies of the same prints and signals arrive", () => {
+    expect(keyOf(prints.map((p) => ({ ...p })), signals.map((s) => ({ ...s })))).toBe(base());
+  });
+
+  it("should not read the rows between the first and the newest", () => {
+    const middle = [...prints.slice(0, 2), { ...prints[2]!, quantity: 77 }, ...prints.slice(3)];
+    const quiet = [...signals.slice(0, 2), { ...signals[2]!, detail: "interior" }, ...signals.slice(3)];
+
+    expect(keyOf(middle, quiet)).toBe(base());
   });
 });
 

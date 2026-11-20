@@ -75,6 +75,9 @@ public sealed record LiquiditySnapshot
     /// <summary>Executed contracts per second over the last 10 s.</summary>
     public required double TradeRate { get; init; }
 
+    /// <summary>The trade rate against its own recent median: active, thin or unknown (REQUIREMENTS.md FR-83).</summary>
+    public required TapeReading Tape { get; init; }
+
     public required long SessionVolume { get; init; }
 
     public required IReadOnlyList<LiquidityWall> Walls { get; init; }

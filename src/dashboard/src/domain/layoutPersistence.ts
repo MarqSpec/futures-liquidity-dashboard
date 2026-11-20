@@ -9,7 +9,7 @@ export interface StoredLayout {
   readonly pending: boolean;
 }
 
-/** GET and PUT /api/layouts/me. `saved` is false when this process has nothing for the caller (including after a restart). */
+/** GET and PUT /api/layouts/me. `saved` is false when the store has nothing for the caller: never saved, or its file was lost. */
 export const layoutDocumentSchema = z.object({
   saved: z.boolean(),
   revision: z.number().int().nonnegative(),
@@ -61,7 +61,7 @@ export function readStoredLayout(value: unknown): StoredLayout | null {
 
 /**
  * Picks the layout to use after a restart or a second browser. The server copy wins whenever it was saved,
- * except for an edit this browser has not had acknowledged at that same revision. A restart (`saved` false)
+ * except for an edit this browser has not had acknowledged at that same revision. An empty store (`saved` false)
  * sends the local document only when it parsed, citing the server's current revision.
  */
 export function reconcileLayout(local: StoredLayout | null, server: ServerLayout): LayoutChoice {

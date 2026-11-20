@@ -205,6 +205,54 @@ public sealed class ReplayAndHostingTests
         act.Should().Throw<OptionsValidationException>().WithMessage("*Feed:ProjectX:LevelsPerSide*5*200*");
     }
 
+    // (REQUIREMENTS.md FR-83)
+    [Fact]
+    public void ReadEngineOptions_ShouldReadTheTapeBaselineAndShare_WhenEngineTapeIsSet()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Engine:Tape:BaselineMinutes"] = "20",
+            ["Engine:Tape:ThinRatio"] = "0.4",
+        }).Build();
+
+        var tape = IngestionServiceCollectionExtensions.ReadEngineOptions(config).Tape;
+
+        (tape.BaselineMinutes, tape.ThinRatio).Should().Be((20, 0.4));
+        IngestionServiceCollectionExtensions.ReadEngineOptions(new ConfigurationBuilder().Build()).Tape
+            .Should().Be(Core.Liquidity.TapeOptions.Default);
+        (Core.Liquidity.TapeOptions.Default.BaselineMinutes, Core.Liquidity.TapeOptions.Default.ThinRatio).Should().Be((30, 0.25));
+    }
+
+    // (REQUIREMENTS.md FR-83)
+    [Theory]
+    [InlineData("0", "0.25", false)]
+    [InlineData("1", "0.25", true)]
+    [InlineData("1440", "0.25", true)]
+    [InlineData("1441", "0.25", false)]
+    [InlineData("30", "0", false)]
+    [InlineData("30", "0.01", true)]
+    [InlineData("30", "1", true)]
+    [InlineData("30", "1.01", false)]
+    public void ReadEngineOptions_ShouldRefuseTheTape_WhenTheWindowOrShareIsOutOfRange(string minutes, string ratio, bool accepted)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Engine:Tape:BaselineMinutes"] = minutes,
+            ["Engine:Tape:ThinRatio"] = ratio,
+        }).Build();
+
+        var act = () => IngestionServiceCollectionExtensions.ReadEngineOptions(config);
+
+        if (accepted)
+        {
+            act.Should().NotThrow();
+        }
+        else
+        {
+            act.Should().Throw<InvalidOperationException>().WithMessage("*Engine:Tape*");
+        }
+    }
+
     [Fact]
     public void ReadEngineOptions_ShouldDefaultLadderLevelsToForty_WhenUnset()
     {

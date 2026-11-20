@@ -140,6 +140,7 @@ export function DashboardRoute() {
                     onTogglePane={togglePane}
                     onToggleKind={toggleKind}
                     onReading={update}
+                    regimes={instruments.find((item) => item.instrument.root === layout.instrument)?.summary.regimes}
                   />
                 )
               ) : (

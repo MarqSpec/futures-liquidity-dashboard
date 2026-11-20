@@ -17,7 +17,7 @@ public sealed record LayoutSettings
     {
         "ema10", "ema13", "ema24", "ema48", "ema200", "vwap", "rsi14", "macd", "atr14",
         "heatmap", "footprint", "cvd", "profile-session", "profile-1h", "profile-4h", "profile-5d", "tpo", "ladder", "overlay",
-        "range-zones",
+        "range-zones", "line-tags",
     };
 
     public static IReadOnlySet<string> KnownSignals { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -307,10 +307,11 @@ public sealed record LayoutSettings
 
     private bool _indicatorDockCollapsed;
 
+    // — the Conditions section
     /// <summary>The Detail side-column sections that can collapse to their heading. Exact, lower-case keys.</summary>
     public static IReadOnlySet<string> KnownSideSections { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
-        "ladder", "liquidity", "signals", "levels", "profile", "layers",
+        "ladder", "conditions", "liquidity", "signals", "levels", "profile", "layers",
     };
 
     /// <summary>

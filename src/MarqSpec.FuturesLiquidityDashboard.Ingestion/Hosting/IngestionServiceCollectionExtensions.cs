@@ -2,6 +2,7 @@ using System.Diagnostics.Metrics;
 using MarqSpec.Client.ProjectX.DependencyInjection;
 using MarqSpec.FuturesLiquidityDashboard.Core.Engine;
 using MarqSpec.FuturesLiquidityDashboard.Core.Instruments;
+using MarqSpec.FuturesLiquidityDashboard.Core.Liquidity;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
 using MarqSpec.FuturesLiquidityDashboard.Core.Regime;
 using MarqSpec.FuturesLiquidityDashboard.Core.Sessions;
@@ -185,7 +186,30 @@ public static partial class IngestionServiceCollectionExtensions
             PrintCapacity = Math.Max(1, section.GetValue(nameof(EngineOptions.PrintCapacity), defaults.PrintCapacity)),
             OrderFlow = orderFlow,
             Regime = regime,
+            Tape = ReadTape(section.GetSection("Tape")),
         };
+    }
+
+    /// <summary>
+    /// <c>Engine:Tape</c> (REQUIREMENTS.md FR-83). A baseline outside 1–1,440 minutes or a share outside (0, 1] fails startup
+    /// rather than flagging every print or none.
+    /// </summary>
+    private static TapeOptions ReadTape(IConfigurationSection section)
+    {
+        var d = TapeOptions.Default;
+        var options = d with
+        {
+            BaselineMinutes = section.GetValue(nameof(TapeOptions.BaselineMinutes), d.BaselineMinutes),
+            ThinRatio = section.GetValue(nameof(TapeOptions.ThinRatio), d.ThinRatio),
+        };
+        if (options.BaselineMinutes < TapeOptions.MinBaselineMinutes || options.BaselineMinutes > TapeOptions.MaxBaselineMinutes
+            || !(options.ThinRatio > 0 && options.ThinRatio <= 1))
+        {
+            throw new InvalidOperationException(
+                $"Engine:Tape needs BaselineMinutes from {TapeOptions.MinBaselineMinutes} to {TapeOptions.MaxBaselineMinutes} and ThinRatio above 0 and at most 1.");
+        }
+
+        return options;
     }
 
     /// <summary><c>Engine:LadderLevels</c>. A value outside 5–200 fails startup rather than trimming or padding the ladder.</summary>

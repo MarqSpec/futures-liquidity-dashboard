@@ -58,6 +58,7 @@ public sealed class InstrumentEngine
     private readonly List<TradeBar> _bars = [];
     private readonly List<TradeBar> _closedMinutes = [];
     private readonly Queue<(long TimeMs, long Quantity, long Delta)> _recentTrades = new();
+    private readonly TapeActivity _tape;
 
     private FeedProvenance _provenance = FeedProvenance.Simulated;
     private bool _connected;
@@ -135,6 +136,7 @@ public sealed class InstrumentEngine
             new IndicatorEngine(AtTimeframe(_options.Indicators, 900)),
         ];
         _regimes = _options.Regime.TimeframesSeconds.Distinct().Order().Select(tf => new RegimeTracker(tf, _options.Regime)).ToList();
+        _tape = new TapeActivity(_options.Tape);
         _orderFlow = new OrderFlowAnalyzer(
             _options.OrderFlow,
             TpoRowTicks(spec, _options.OrderFlow.TpoRowTicks),
@@ -143,6 +145,7 @@ public sealed class InstrumentEngine
             ExternalLevels = ExternalLevels,
             NamedLevels = RipsLevelsLocked,
         };
+        _orderFlow.Signals.ThinTape = () => TapeLocked().State == TapeState.Thin;
     }
 
     /// <summary>
@@ -1334,7 +1337,8 @@ public sealed class InstrumentEngine
                 quantity10 / 10.0, _lastTradeMs,
                 _orderFlow.Signals.Newest,
                 _orderFlow.Signals.CountAfter(cutoff15),
-                _regimes.Select(r => r.State()).ToList());
+                _regimes.Select(r => r.State()).ToList(),
+                TapeLocked());
         }
     }
 
@@ -1537,6 +1541,7 @@ public sealed class InstrumentEngine
     private void AdvanceLocked(long t)
     {
         _nowMs = Math.Max(_nowMs, t);
+        _tape.AdvanceTo(t);
         var retention = _options.RetentionMinutes * (long)MinuteMs;
         foreach (var column in _integrator.Advance(t, _book))
         {
@@ -1595,6 +1600,8 @@ public sealed class InstrumentEngine
             StartSession(session.Id, openMs, t > openMs + MinuteMs ? t : null);
         }
 
+        // Before the detectors, so a signal this print raises is judged with it.
+        _tape.Add(t, trade.Quantity, live);
         var buyer = trade.Aggressor == BookSide.Bid;
         var signed = buyer ? trade.Quantity : -trade.Quantity;
         foreach (var bar in _secondBars.Add(t, trade.PriceTicks, trade.Quantity, buyer))
@@ -1636,6 +1643,7 @@ public sealed class InstrumentEngine
 
     private void AdvanceHistory(long t)
     {
+        _tape.AdvanceTo(t);
         var retention = _options.RetentionMinutes * (long)MinuteMs;
         foreach (var bar in _secondBars.AdvanceTo(t))
         {
@@ -1725,7 +1733,7 @@ public sealed class InstrumentEngine
     {
         var age = _lastReceivedMs == long.MinValue ? (long?)null : Math.Max(0, _nowMs - _lastReceivedMs);
         var instant = DateTimeOffset.FromUnixTimeMilliseconds(_nowMs);
-        var stale = _connected && age > _options.StaleAfterMs && _calendar.IsOpen(instant);
+        var stale = StaleLocked();
         var healthy = _provenance switch
         {
             FeedProvenance.Live => "LIVE",
@@ -1733,7 +1741,7 @@ public sealed class InstrumentEngine
             FeedProvenance.Simulated => "SIMULATED",
             _ => throw new InvalidOperationException("Unknown provenance."),
         };
-        var code = !_connected || (_depthSubscribed && !_book.IsKnown)
+        var code = RecoveringLocked()
             ? "RECOVERING"
             : stale
                 ? "STALE"
@@ -1764,6 +1772,28 @@ public sealed class InstrumentEngine
             CvdKnown = _cvdKnown,
             Approximate = SessionHoldsApproximateRepair(),
         };
+    }
+
+    /// <summary>RECOVERING in <see cref="StatusLocked"/>: disconnected, or depth subscribed with the book unknown.</summary>
+    private bool RecoveringLocked() => !_connected || (_depthSubscribed && !_book.IsKnown);
+
+    /// <summary>STALE in <see cref="StatusLocked"/>: connected, the exchange open, and no event for the stale window.</summary>
+    private bool StaleLocked() =>
+        _connected
+        && _lastReceivedMs != long.MinValue
+        && _nowMs - _lastReceivedMs > _options.StaleAfterMs
+        && _calendar.IsOpen(DateTimeOffset.FromUnixTimeMilliseconds(_nowMs));
+
+    /// <summary>
+    /// The tape reading, with no state while the feed is RECOVERING or STALE, where a quiet tape cannot be told from a
+    /// silent feed, or while the exchange is closed, where the tape is shut rather than thin (REQUIREMENTS.md FR-83).
+    /// </summary>
+    private TapeReading TapeLocked()
+    {
+        var reading = _tape.Reading();
+        return RecoveringLocked() || StaleLocked() || !_calendar.IsOpen(DateTimeOffset.FromUnixTimeMilliseconds(_nowMs))
+            ? reading with { State = TapeState.Unknown, BaselineRate = null, ThinBelowRate = null }
+            : reading;
     }
 
     /// <summary>Rolling profiles keep their flags until they expire. Only the session profile holds the contract DEGRADED.</summary>
@@ -2121,6 +2151,7 @@ public sealed class InstrumentEngine
             CumulativeDelta = _cumulativeDelta,
             Delta60s = _recentTrades.Sum(t => t.Delta),
             TradeRate = _recentTrades.Where(t => t.TimeMs > cutoff10).Sum(t => t.Quantity) / 10.0,
+            Tape = TapeLocked(),
             SessionVolume = _sessionVolume,
             Walls = _walls.Detect(_nowMs, _book),
             EndedWalls = _walls.Ended(_nowMs),

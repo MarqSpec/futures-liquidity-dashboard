@@ -27,6 +27,14 @@ describe("LayersPanel", () => {
     expect(html).toContain("Liquidity heatmap");
   });
 
+  it("should offer the line tags toggle beside the agent overlay", () => {
+    const html = renderToString(
+      <LayersPanel isPaneOn={() => true} onToggle={() => undefined} indicators={[]} layout={defaultLayout} onReading={() => undefined} />,
+    );
+
+    expect(html).toContain("Line tags on the price axis");
+  });
+
   it("should leave the indicator dock tabs out of the layer checkboxes", () => {
     const html = renderToString(
       <LayersPanel

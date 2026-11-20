@@ -24,6 +24,7 @@ import { autoContrastDomain, bookmapColor, rampT } from "../domain/heatRamp.ts";
 import type { HeatMode } from "../domain/layout.ts";
 import { niceTicks, timeTicks } from "../domain/scale.ts";
 import { eventMarker } from "../domain/signals.ts";
+import { THIN_TAPE_ALPHA } from "../domain/tape.ts";
 import { labelBox, type Surface } from "../lib/canvas.ts";
 import { colors, fonts, orderFlowFonts, themeColor, themed } from "../theme.ts";
 import { drawRangeZones } from "./drawRangeZones.ts";
@@ -107,7 +108,8 @@ export interface BookmapDrawModel {
   readonly bestBid: number | null;
   readonly bestAsk: number | null;
   readonly showPnc: boolean;
-  readonly signals: readonly { readonly timeMs: number; readonly priceTicks: number; readonly kind: string; readonly inferred: boolean }[];
+  /** `thinTape` dims the marker (REQUIREMENTS.md FR-83). */
+  readonly signals: readonly { readonly timeMs: number; readonly priceTicks: number; readonly kind: string; readonly inferred: boolean; readonly thinTape?: boolean }[];
   readonly reclaims: readonly FailedReclaim[];
   readonly guide: TrailGuide | null;
   readonly cob: CobColumn;
@@ -509,8 +511,10 @@ function drawSignals(
   for (const signal of model.signals) {
     if (signal.timeMs < model.startMs || signal.timeMs > model.endMs) continue;
     const marker = eventMarker(signal.kind);
+    ctx.globalAlpha = signal.thinTape === true ? THIN_TAPE_ALPHA : 1;
     drawMarker(ctx, scales.time.toPx(signal.timeMs), scales.price.toPx(signal.priceTicks), marker.color, signal.inferred, model.eventDotRadius);
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawReclaims(

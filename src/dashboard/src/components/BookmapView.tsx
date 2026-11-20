@@ -310,6 +310,7 @@ export function BookmapView({ market, layout, viewWindow, onReading, onWindow, c
           kind: signal.kind,
           name: marker.name,
           inferred: marker.inferred || signal.label.toLowerCase().includes("inferred"),
+          thinTape: signal.thinTape === true,
           bias: signal.bias,
           strength: signal.strength,
           detail: signal.label && signal.label !== marker.name ? `${signal.label}. ${signal.detail}` : signal.detail,

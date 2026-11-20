@@ -64,4 +64,22 @@ describe("OverviewTable", () => {
   it("should say so when the API listed no products", () => {
     expect(renderToString(<OverviewTable summaries={[]} watchlist={[]} active="ES" refused={[]} onOpen={noop} onWatch={noop} />)).toContain("No products listed yet.");
   });
+
+  // (REQUIREMENTS.md FR-57, FR-83)
+  it("should mark the rate thin, with the rule's numbers in its hint, when the product's tape is thin", () => {
+    const tape = { state: "Thin" as const, rate: 0.1, baselineRate: 4, thinBelowRate: 1, baselineMinutes: 30 };
+    const html = renderToString(
+      <OverviewTable
+        summaries={[instrumentSummaryFixture({ root: "ES" }, { tradeRate: 0.1, tape }), instrumentSummaryFixture({ root: "CL" }, { tradeRate: 3 })]}
+        watchlist={[]}
+        active="ES"
+        refused={[]}
+        onOpen={noop}
+        onWatch={noop}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain('title="Tape thin: 0.1/s against a 30-minute median of 4.0/s; thin below 1.0/s"');
+    expect(html.match(/class="tape-tag tape-thin"/g)).toHaveLength(1);
+  });
 });

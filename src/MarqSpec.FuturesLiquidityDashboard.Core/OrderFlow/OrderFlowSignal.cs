@@ -38,6 +38,9 @@ public enum SignalBias
 /// An iceberg's lower bound on its hidden size, the same number as "hidden ≥" in <paramref name="Detail"/>; null, and
 /// left out of the JSON, for every other kind (REQUIREMENTS.md FR-52, FR-62).
 /// </param>
+/// <param name="ThinTape">
+/// True when the tape was thin as the signal was raised (REQUIREMENTS.md FR-83); false, and left out of the JSON, otherwise.
+/// </param>
 public sealed record OrderFlowSignal(
     long Id,
     SignalKind Kind,
@@ -48,7 +51,8 @@ public sealed record OrderFlowSignal(
     double Strength,
     string Label,
     string Detail,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? HiddenEstimate = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? HiddenEstimate = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool ThinTape = false);
 
 /// <summary>
 /// A named price. <see cref="SessionId"/> and <see cref="AsOfMs"/> are set for RIPS levels (REQUIREMENTS.md FR-63).
@@ -87,6 +91,9 @@ public sealed class SignalLog
     }
 
     public long LastId => _lastId;
+
+    /// <summary>Asked as each signal is kept: whether the tape is thin now (REQUIREMENTS.md FR-83). Never thin by default.</summary>
+    public Func<bool> ThinTape { get; set; } = static () => false;
 
     /// <summary>The newest retained signal, or null when the log is empty. The list is not copied.</summary>
     public OrderFlowSignal? Newest => _signals.Count == 0 ? null : _signals[^1];
@@ -139,7 +146,7 @@ public sealed class SignalLog
         }
 
         var signal = new OrderFlowSignal(++_lastId, kind, bias, timeMs, Math.Min(low, high), Math.Max(low, high),
-            Math.Round(Math.Clamp(strength, 0, 1), 3), label, detail, hiddenEstimate);
+            Math.Round(Math.Clamp(strength, 0, 1), 3), label, detail, hiddenEstimate, ThinTape());
         _signals.Add(signal);
         Prune(timeMs);
         return signal;

@@ -253,6 +253,38 @@ public sealed class SignalLogTests
         without.RootElement.TryGetProperty("hiddenEstimate", out _).Should().BeFalse("a null would add bytes to every one of up to 20,000 signals");
     }
 
+    [Fact]
+    public void Add_ShouldTagTheSignalThinTape_WhenTheTapeIsThinAsItIsRaised()
+    {
+        var thin = false;
+        var log = Log();
+        log.ThinTape = () => thin;
+
+        var active = Add(log, SignalKind.StackedImbalance, T0);
+        thin = true;
+        var during = Add(log, SignalKind.StackedImbalance, T0 + 1_000);
+
+        (active.ThinTape, during.ThinTape).Should().Be((false, true));
+    }
+
+    [Fact]
+    public void Serialize_ShouldWriteThinTapeOnlyOnASignalRaisedWhileThin_WhenSignalsAreSerialized()
+    {
+        var thin = false;
+        var log = Log();
+        log.ThinTape = () => thin;
+        var active = Add(log, SignalKind.StackedImbalance, T0);
+        thin = true;
+        var during = Add(log, SignalKind.StackedImbalance, T0 + 1_000);
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+        using var tagged = JsonDocument.Parse(JsonSerializer.Serialize(during, json));
+        using var untagged = JsonDocument.Parse(JsonSerializer.Serialize(active, json));
+
+        tagged.RootElement.GetProperty("thinTape").GetBoolean().Should().BeTrue();
+        untagged.RootElement.TryGetProperty("thinTape", out _).Should().BeFalse("a false would add bytes to every one of up to 20,000 signals");
+    }
+
     private static SignalLog Log(long retentionMs = RetentionMs, int cap = 100) => new(retentionMs, cap);
 
     private static OrderFlowSignal Add(SignalLog log, SignalKind kind, long timeMs)

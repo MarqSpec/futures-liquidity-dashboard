@@ -151,4 +151,15 @@ describe("LiquidityPanel", () => {
   it("should show no Ended part when no wall ended recently", () => {
     expect(render({ endedWalls: [] })).not.toContain("Ended:");
   });
+
+  // (REQUIREMENTS.md FR-83)
+  it("should show the tape's state beside the trade rate, with the rule's numbers in its hint", () => {
+    const html = render({ tradeRate: 0.1, tape: { state: "Thin", rate: 0.1, baselineRate: 4, thinBelowRate: 1, baselineMinutes: 30 } });
+
+    expect(html).toMatch(/<dt>Tape<\/dt><dd class="tape-thin" title="Tape thin: 0.1\/s against a 30-minute median of 4.0\/s; thin below 1.0\/s">thin<\/dd>/);
+  });
+
+  it("should leave the tape row out when an older server sends no tape", () => {
+    expect(render({ tape: null })).not.toContain("<dt>Tape</dt>");
+  });
 });

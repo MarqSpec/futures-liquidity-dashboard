@@ -36,16 +36,13 @@ describe("MarketView", () => {
     expect(render(withPane(defaultLayout, "ladder", false))).not.toContain("Depth ladder");
   });
 
-  it("should list a signal's label when its kind is on", () => {
-    const spoof = market.orderFlow.signals.find((s) => s.kind === "Spoof");
-
-    expect(render(withSignal(defaultLayout, "Spoof", true))).toContain(spoof?.label);
+  // (the spoof sits in a closed group, whose members mount on open)
+  it("should list a signal's kind in its group row when its kind is on", () => {
+    expect(render(withSignal(defaultLayout, "Spoof", true))).toMatch(/Spoof \d+ %/);
   });
 
   it("should hide a spoof when only the default signal kinds are on", () => {
-    const spoof = market.orderFlow.signals.find((s) => s.kind === "Spoof");
-
-    expect(render()).not.toContain(spoof?.label);
+    expect(render()).not.toMatch(/Spoof \d+ %/);
   });
 
   it("should leave out an iceberg below the layout's strength floor and count it when the floor is saved", () => {
@@ -58,9 +55,7 @@ describe("MarketView", () => {
   });
 
   it("should not list a signal when its kind is toggled off", () => {
-    const spoof = market.orderFlow.signals.find((s) => s.kind === "Spoof");
-
-    expect(render(withSignal(defaultLayout, "Spoof", false))).not.toContain(spoof?.label);
+    expect(render(withSignal(defaultLayout, "Spoof", false))).not.toMatch(/Spoof \d+ %/);
   });
 
   it("should escape server text rather than render it as markup", () => {

@@ -20,6 +20,7 @@ import { regimeLabel, regimeTitle, regimeTone } from "../domain/regime.ts";
 import { kindName } from "../domain/signals.ts";
 import { formatChicagoMinute } from "../domain/format.ts";
 import { chipTone } from "../domain/status.ts";
+import { tapeHint } from "../domain/tape.ts";
 import { useNow } from "../hooks/useNow.ts";
 import { ChangeServerButton } from "./ChangeServerButton.tsx";
 import { Star } from "./ProductPanel.tsx";
@@ -45,7 +46,7 @@ const columns: readonly (readonly [OverviewSortKey, string, string])[] = [
   ["range", "High / Low", "Session high and low; sorts by range as a share of the open"],
   ["volume", "Vol", "Session volume"],
   ["spread", "Spr", "Spread in ticks (ask minus bid)"],
-  ["tradeRate", "Rate", "Contracts traded per second, last 10 s"],
+  ["tradeRate", "Rate", "Contracts traded per second, last 10 s; marked thin when under its share of its own recent median"],
   ["delta60s", "Δ60s", "Volume delta over the last 60 seconds"],
   ["cvd", "CVD", "Session cumulative volume delta"],
   ["regime5m", "5m", "Regime on 5-minute bars"],
@@ -135,7 +136,15 @@ const OverviewDataRow = memo(function OverviewDataRow({ row, active, now, watche
       <td className="num">{formatHighLow(s, instrument)}</td>
       <td className="num">{formatQty(s.sessionVolume)}</td>
       <td className="num">{formatSpread(s)}</td>
-      <td className="num">{formatRate(s.tradeRate)}</td>
+      <td className="num" title={s.tape ? tapeHint(s.tape) : undefined}>
+        {formatRate(s.tradeRate)}
+        {s.tape?.state === "Thin" && (
+          <>
+            {" "}
+            <span className="tape-tag tape-thin">thin</span>
+          </>
+        )}
+      </td>
       <td className={numClass(s.delta60s)}>{formatArrowed(s.delta60s)}</td>
       <td className={source.status.cvdKnown ? numClass(s.cumulativeDelta) : "num"}>
         {source.status.cvdKnown ? formatArrowed(s.cumulativeDelta) : "unknown"}

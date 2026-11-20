@@ -56,6 +56,7 @@ export function mainChartDrawKey(
     model.market.liquidity.quoteStale ? 1 : 0,
     model.vwap ? 1 : 0,
     model.overlay ? 1 : 0,
+    model.lineTags === false ? 0 : 1,
     model.emaIds.join(","),
     enabledKinds(model.isKindOn),
     model.market.instrument.tickSize,
@@ -71,9 +72,9 @@ export function mainChartDrawKey(
     model.market.vwap.anchor ?? "",
   ]);
   hash = mixCandles(hash, model.candles);
-  hash = mixList(hash, model.market.prints.map((print) => [print.sequence, print.sourceTimeMs, print.priceTicks, print.quantity, print.aggressor]));
+  hash = mixPrints(hash, model.market.prints);
   hash = mixHeat(hash, model);
-  hash = mixList(hash, model.signals.map((signal) => [signal.id, signal.kind, signal.bias, signal.timeMs, signal.priceTicks, signal.priceHighTicks, signal.strength, signal.label, signal.detail]));
+  hash = mixSignals(hash, model.signals);
   hash = mixList(hash, model.levelTouches.map((level) => [level.name, level.priceTicks, level.isHigh ? 1 : 0, level.touches, level.isThirdTouch ? 1 : 0, level.lastTouchMs ?? "", level.held, level.broke]));
   hash = mixList(hash, flow.keyLevels.map((level) => [level.name, level.priceTicks, level.isHigh ? 1 : 0]));
   hash = mix(hash, [flow.footprintSeconds]);
@@ -87,6 +88,26 @@ export function mainChartDrawKey(
   hash = mixFootprint(hash, model);
   hash = mixList(hash, (model.rangeZones ?? []).map((zone) => [zone.startMs, zone.endMs, zone.lowTicks, zone.highTicks]));
   return fnvHex(hash);
+}
+
+/**
+ * Prints are appended by sequence and capped at the head, so a change is a new count, a new first row or a new newest
+ * row: the key reads those, not every print. A row between the ends is never rewritten in place.
+ */
+function mixPrints(hash: number, prints: MainChartModel["market"]["prints"]): number {
+  const first = prints[0];
+  const newest = prints[prints.length - 1];
+  hash = mix(hash, [prints.length, first?.sequence ?? ""]);
+  return newest ? mix(hash, [newest.sequence, newest.sourceTimeMs, newest.priceTicks, newest.quantity, newest.aggressor]) : hash;
+}
+
+/** Signals are appended by id and trimmed at the head; the same count, first id and newest row stand for the list. */
+function mixSignals(hash: number, signals: MainChartModel["signals"]): number {
+  const first = signals[0];
+  const newest = signals[signals.length - 1];
+  hash = mix(hash, [signals.length, first?.id ?? ""]);
+  if (!newest) return hash;
+  return mix(hash, [newest.id, newest.kind, newest.bias, newest.timeMs, newest.priceTicks, newest.priceHighTicks, newest.strength, newest.label, newest.detail]);
 }
 
 /** The footprint bars in the window, the forming one included, when Detail's main chart is the footprint. */

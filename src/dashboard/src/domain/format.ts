@@ -28,6 +28,9 @@ export function formatTickRange(low: number, high: number, spec: TickSpec): stri
   return low === high ? formatTicks(low, spec) : `${formatTicks(low, spec)} – ${formatTicks(high, spec)}`;
 }
 
+// One formatter for every call: `toLocaleString` builds a new Intl.NumberFormat each time.
+const formatWhole = new Intl.NumberFormat("en-US").format;
+
 /** Formats a whole quantity with thousands separators, or with k/M once it is large. */
 export function formatQty(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -40,7 +43,7 @@ export function formatQty(value: number | null | undefined): string {
   if (abs >= 10_000) {
     return `${(value / 1000).toFixed(1)}k`;
   }
-  return Math.round(value).toLocaleString("en-US");
+  return formatWhole(Math.round(value));
 }
 
 /** Formats a quantity with an explicit sign: +12, −5, 0. */
@@ -60,6 +63,11 @@ export function formatPercent(fraction: number | null | undefined, digits = 0): 
     return "—";
   }
   return `${(fraction * 100).toFixed(digits)} %`;
+}
+
+/** The whole percent `formatPercent` shows for a 0–1 fraction, rounded the same way, so a floor compares what is read. */
+export function wholePercent(fraction: number): number {
+  return Number((fraction * 100).toFixed(0));
 }
 
 const localTime = new Intl.DateTimeFormat(undefined, {

@@ -10,8 +10,11 @@ import type { MarketState } from "../domain/merge.ts";
 import { touchOutcomeText } from "../domain/quote.ts";
 import { linearScale, niceTicks, timeTicks, type LinearScale } from "../domain/scale.ts";
 import { biasColors, kindName } from "../domain/signals.ts";
+import { THIN_TAPE_ALPHA, THIN_TAPE_LINE } from "../domain/tape.ts";
 import { hatchPattern, labelBox, type Surface } from "../lib/canvas.ts";
 import { AXIS_WIDTH, canvasColors, colors, emaColors, fonts, MONO, PROFILE_GUTTER, themed } from "../theme.ts";
+import { emaPath } from "../domain/lineTags.ts";
+import { drawLineTags } from "./drawLineTags.ts";
 import { drawRangeZones } from "./drawRangeZones.ts";
 import { strokeVolumeDotOutline } from "./volumeDotOutline.ts";
 
@@ -48,6 +51,8 @@ export interface MainChartModel {
   readonly emaIds: readonly string[];
   readonly vwap: boolean;
   readonly overlay: boolean;
+  /** Names the VWAP, its bands and each EMA on the price axis. Default on (REQUIREMENTS.md FR-77). */
+  readonly lineTags?: boolean;
   readonly signals: readonly Signal[];
   readonly isKindOn: (kind: string) => boolean;
   /** Set when Detail's main chart is the footprint (REQUIREMENTS.md FR-22): drawn instead of the price chart, on the same window. */
@@ -430,23 +435,10 @@ function drawEmas(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Linear
     ctx.globalAlpha = series.ready ? 1 : 0.45;
     ctx.setLineDash(series.ready ? [] : [3, 3]);
     ctx.beginPath();
-    let started = false;
-    const margin = series.tf * 1000;
-    for (const point of series.points) {
-      const t = point[0];
-      const v = point[1];
-      if (t === null || t === undefined || v === null || v === undefined || t < m.startMs - margin) continue;
-      if (t > m.endMs + margin) break;
-      const x = time.toPx(t);
-      const y = price.toPx(v);
-      if (started) ctx.lineTo(x, y);
-      else ctx.moveTo(x, y);
-      started = true;
-    }
-    const dev = series.dev?.[0];
-    if (started && dev !== null && dev !== undefined) {
-      ctx.lineTo(time.toPx(m.market.serverTimeMs), price.toPx(dev));
-    }
+    emaPath(series, { startMs: m.startMs, endMs: m.endMs, serverTimeMs: m.market.serverTimeMs }).forEach(([t, v], i) => {
+      if (i === 0) ctx.moveTo(time.toPx(t), price.toPx(v));
+      else ctx.lineTo(time.toPx(t), price.toPx(v));
+    });
     ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -689,6 +681,43 @@ function letterMarker(ctx: CanvasRenderingContext2D, x: number, y: number, lette
   ctx.fillText(letter, x, y + 0.5);
 }
 
+/**
+ * A signal marker whose tooltip text is built on first read. Every visible signal is a marker on every draw, but only
+ * the hovered one is ever read, so the strings are not built for the rest.
+ */
+function signalText(signal: Signal, spec: MarketState["instrument"]): { readonly title: string; readonly lines: readonly string[] } {
+  let lines: readonly string[] | undefined;
+  return {
+    get title() {
+      return `${kindName(signal.kind)} · ${signal.label}`;
+    },
+    get lines() {
+      lines ??= [
+        `${formatLocalTime(signal.timeMs)} · ${formatChicagoTime(signal.timeMs)}`,
+        formatTickRange(signal.priceTicks, signal.priceHighTicks, spec),
+        signal.detail,
+        `strength ${formatPercent(signal.strength)}`,
+        ...(signal.thinTape === true ? [THIN_TAPE_LINE] : []),
+      ];
+      return lines;
+    },
+  };
+}
+
+function signalMarker(x: number, y: number, r: number, text: ReturnType<typeof signalText>): Marker {
+  return {
+    x,
+    y,
+    r,
+    get title() {
+      return text.title;
+    },
+    get lines() {
+      return text.lines;
+    },
+  };
+}
+
 function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: LinearScale, price: LinearScale, w: number, markers: Marker[]) {
   const spec = m.market.instrument;
   const barMs = m.market.orderFlow.footprintSeconds * 1000;
@@ -700,13 +729,9 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
     const yHigh = price.toPx(signal.priceHighTicks);
     const y = (yLow + yHigh) / 2;
     if (y < -20 || y > price.r0 + 20) continue;
-    const lines = [
-      `${formatLocalTime(signal.timeMs)} · ${formatChicagoTime(signal.timeMs)}`,
-      formatTickRange(signal.priceTicks, signal.priceHighTicks, spec),
-      signal.detail,
-      `strength ${formatPercent(signal.strength)}`,
-    ];
-    const title = `${kindName(signal.kind)} · ${signal.label}`;
+    const alpha = signal.thinTape === true ? THIN_TAPE_ALPHA : 1;
+    const text = signalText(signal, spec);
+    ctx.globalAlpha = alpha;
     switch (signal.kind) {
       case "Iceberg": {
         const r = 3 + 5 * signal.strength;
@@ -716,7 +741,7 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         diamond(ctx, x, y, r);
         ctx.fill();
         ctx.stroke();
-        markers.push({ x, y, r: r + 3, title, lines });
+        markers.push(signalMarker(x, y, r + 3, text));
         break;
       }
       case "Spoof": {
@@ -727,7 +752,7 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.arc(x, y, 6, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
-        markers.push({ x, y, r: 9, title, lines });
+        markers.push(signalMarker(x, y, 9, text));
         break;
       }
       case "LiquiditySweep": {
@@ -743,16 +768,16 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.stroke();
         triangle(ctx, x, tip + (up ? 2 : -2), 5, up);
         ctx.fill();
-        markers.push({ x, y: (tip + tail) / 2, r: 11, title, lines });
+        markers.push(signalMarker(x, (tip + tail) / 2, 11, text));
         break;
       }
       case "StackedImbalance": {
         const x1 = time.toPx(signal.timeMs + barMs);
         ctx.fillStyle = color;
-        ctx.globalAlpha = 0.18;
+        ctx.globalAlpha = 0.18 * alpha;
         ctx.fillRect(x, price.toPx(signal.priceHighTicks + 0.5), Math.max(2, x1 - x), Math.max(2, yLow - yHigh + Math.abs(price.toPx(0) - price.toPx(1))));
-        ctx.globalAlpha = 1;
-        markers.push({ x: (x + x1) / 2, y, r: Math.max(6, (x1 - x) / 2), title, lines });
+        ctx.globalAlpha = alpha;
+        markers.push(signalMarker((x + x1) / 2, y, Math.max(6, (x1 - x) / 2), text));
         break;
       }
       case "UnfinishedAuction": {
@@ -762,7 +787,7 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.moveTo(x, y);
         ctx.lineTo(x + 10, y);
         ctx.stroke();
-        markers.push({ x: x + 5, y, r: 7, title, lines });
+        markers.push(signalMarker(x + 5, y, 7, text));
         break;
       }
       case "TrappedTraders": {
@@ -770,22 +795,22 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.lineWidth = 1.5;
         triangle(ctx, x, y, 6, signal.bias === "Bullish");
         ctx.stroke();
-        markers.push({ x, y, r: 9, title, lines });
+        markers.push(signalMarker(x, y, 9, text));
         break;
       }
       case "DeltaExhaustion":
         letterMarker(ctx, x, y, "E", color);
-        markers.push({ x, y, r: 9, title, lines });
+        markers.push(signalMarker(x, y, 9, text));
         break;
       case "CvdDivergence":
         letterMarker(ctx, x, y, "D", color);
-        markers.push({ x, y, r: 9, title, lines });
+        markers.push(signalMarker(x, y, 9, text));
         break;
       case "SinglePrints": {
         ctx.fillStyle = color;
-        ctx.globalAlpha = 0.1;
+        ctx.globalAlpha = 0.1 * alpha;
         ctx.fillRect(x, yHigh, Math.max(0, w - x), Math.max(2, yLow - yHigh));
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = alpha;
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -794,7 +819,7 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.lineTo(x, yLow);
         ctx.lineTo(x + 4, yLow);
         ctx.stroke();
-        markers.push({ x, y, r: Math.max(8, (yLow - yHigh) / 2), title, lines });
+        markers.push(signalMarker(x, y, Math.max(8, (yLow - yHigh) / 2), text));
         break;
       }
       default:
@@ -802,9 +827,10 @@ function drawSignals(ctx: CanvasRenderingContext2D, m: MainChartModel, time: Lin
         ctx.beginPath();
         ctx.arc(x, y, 4, 0, Math.PI * 2);
         ctx.fill();
-        markers.push({ x, y, r: 7, title, lines });
+        markers.push(signalMarker(x, y, 7, text));
     }
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawOrderFlowState(ctx: CanvasRenderingContext2D, m: MainChartModel, time: LinearScale, price: LinearScale, w: number, markers: Marker[]) {
@@ -877,6 +903,18 @@ function drawOrderFlowState(ctx: CanvasRenderingContext2D, m: MainChartModel, ti
       });
     }
   }
+}
+
+/** The y of every price tag already on the axis, so the line tags stack clear of them. */
+function priceTagYs(m: MainChartModel, price: LinearScale): number[] {
+  const { bestBid, bestAsk } = m.market.liquidity;
+  const last = m.candles.at(-1)?.c;
+  const inView = (v: number | null | undefined): v is number => v !== null && v !== undefined && v >= m.lowTicks && v <= m.highTicks;
+  const ys: number[] = [];
+  if (inView(bestBid)) ys.push(price.toPx(bestBid));
+  if (inView(bestAsk)) ys.push(price.toPx(bestAsk));
+  if (inView(last)) ys.push(Math.round(price.toPx(last)) + 0.5);
+  return ys;
 }
 
 function drawPriceMarks(ctx: CanvasRenderingContext2D, m: MainChartModel, price: LinearScale, w: number) {
@@ -999,6 +1037,7 @@ export function drawMainChart(surface: Surface, m: MainChartModel): MainChartGeo
   ctx.strokeStyle = colors.grid;
   ctx.strokeRect(gutter + 0.5, 0.5, plotRight - gutter, h);
   drawPriceMarks(ctx, m, price, plotRight);
+  drawLineTags(ctx, m, price, plotRight, width, h, priceTagYs(m, price));
   return { plotLeft: gutter, plotWidth: plotRight, plotHeight: h, time, price, markers };
 }
 

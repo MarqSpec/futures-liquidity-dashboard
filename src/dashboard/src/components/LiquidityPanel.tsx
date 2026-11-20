@@ -1,5 +1,6 @@
 import type { Liquidity } from "../api/schemas.ts";
 import { formatAge, formatPercent, formatQty, formatSigned, formatTicks, type TickSpec } from "../domain/format.ts";
+import { tapeHint, tapeStateText } from "../domain/tape.ts";
 import { endedWallTitle, outcomeLabel } from "../domain/walls.ts";
 import { SidePanel, type SideFold } from "./SidePanel.tsx";
 
@@ -96,6 +97,14 @@ export function LiquidityPanel({ liquidity: l, spec, nowMs, fold }: LiquidityPan
         <dd className={signed(l.delta60s)}>{formatSigned(l.delta60s)}</dd>
         <dt>Trade rate</dt>
         <dd>{Number.isFinite(l.tradeRate) ? l.tradeRate.toFixed(1) : "—"}/s</dd>
+        {l.tape && (
+          <>
+            <dt>Tape</dt>
+            <dd className={`tape-${l.tape.state.toLowerCase()}`} title={tapeHint(l.tape)}>
+              {tapeStateText(l.tape)}
+            </dd>
+          </>
+        )}
         <dt>Session vol</dt>
         <dd>{formatQty(l.sessionVolume)}</dd>
       </dl>

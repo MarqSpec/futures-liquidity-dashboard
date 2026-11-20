@@ -20,6 +20,7 @@ const noop = () => undefined;
 /** Each section: its region's name and its heading button's name. */
 const sections = [
   ["ladder", "Depth ladder", /^Depth/],
+  ["conditions", "Conditions", /^Conditions$/],
   ["liquidity", "Liquidity metrics", /^Liquidity/],
   ["signals", "Order-flow signals", /^Signals$/],
   ["levels", "Levels", /^Levels/],
@@ -60,7 +61,7 @@ function Harness({ initial }: { readonly initial: LayoutSettings }) {
   );
 }
 
-/** Every section shown, the profile included, so all six can be driven. */
+/** Every section shown, the profile included, so all seven can be driven. */
 const withProfile = withPane(defaultLayout, "profile-session", true);
 
 function headingButton(region: string, name: RegExp): HTMLElement {

@@ -153,6 +153,20 @@ export const signalSchema = z.object({
   detail: z.string(),
   /** An iceberg's lower bound on its hidden size (FR-52). Absent on every other kind, and on an older server. */
   hiddenEstimate: long.nullish(),
+  /** True when the tape was thin as the signal was raised (FR-83). Absent otherwise, and on an older server. */
+  thinTape: z.boolean().optional(),
+});
+
+/** The tape-activity states of FR-83; a state this client does not know reads as Unknown. */
+export const tapeStates = ["Unknown", "Active", "Thin"] as const;
+
+/** The trade rate against its own recent median (FR-83). The baseline and the limit are null when the state is Unknown. */
+export const tapeSchema = z.object({
+  state: z.enum(tapeStates).catch("Unknown"),
+  rate: dbl,
+  baselineRate: dbl.nullish().transform((v) => v ?? null),
+  thinBelowRate: dbl.nullish().transform((v) => v ?? null),
+  baselineMinutes: z.number().int(),
 });
 
 export const icebergSchema = z.object({
@@ -295,6 +309,8 @@ export const liquiditySchema = z.object({
   endedWalls: z.array(endedWallSchema).default([]),
   quoteTimeMs: long.nullish(),
   quoteStale: z.boolean().default(false),
+  /** Null on an older server, which sends none (FR-83). */
+  tape: tapeSchema.nullish().transform((v) => v ?? null),
 });
 
 export const overlaySchema = z.object({
@@ -434,6 +450,8 @@ export const marketSummarySchema = z.object({
   signals15m: z.number().int().default(0),
   /** One regime per configured bar timeframe, by timeframe (by default 300 and 900 seconds). */
   regimes: regimesSchema.default([]),
+  /** The product's tape activity (FR-83); null on an older server. */
+  tape: tapeSchema.nullish().transform((v) => v ?? null),
 });
 
 /** The summary of a product nothing has traded in yet, and what an older server's answer (with none) reads as. */
@@ -452,6 +470,7 @@ export const emptyMarketSummary: MarketSummary = {
   latestSignal: null,
   signals15m: 0,
   regimes: [],
+  tape: null,
 };
 
 export const instrumentSummariesSchema = z.array(
@@ -497,6 +516,7 @@ export type OrderFlow = z.infer<typeof orderFlowSchema>;
 export type Vwap = z.infer<typeof vwapSchema>;
 export type Ladder = z.infer<typeof ladderSchema>;
 export type Liquidity = z.infer<typeof liquiditySchema>;
+export type Tape = z.infer<typeof tapeSchema>;
 export type EndedWall = z.infer<typeof endedWallSchema>;
 export type Overlay = z.infer<typeof overlaySchema>;
 export type Snapshot = z.infer<typeof snapshotSchema>;

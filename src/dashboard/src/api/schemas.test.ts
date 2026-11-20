@@ -48,6 +48,44 @@ describe("liquiditySchema endedWalls", () => {
   });
 });
 
+// (REQUIREMENTS.md FR-83)
+describe("tape and thinTape", () => {
+  const tape = { state: "Thin", rate: 0.1, baselineRate: 4, thinBelowRate: 1, baselineMinutes: 30 };
+
+  it("should read no tape when an older server sends none", () => {
+    expect(snapshotSchema.parse(rawSnapshot).liquidity.tape).toBeNull();
+  });
+
+  it("should keep the tape reading when the server sends one", () => {
+    const snapshot = snapshotSchema.parse(rawSnapshot);
+
+    expect(snapshotSchema.parse({ ...snapshot, liquidity: { ...snapshot.liquidity, tape } }).liquidity.tape).toEqual(tape);
+  });
+
+  it("should read a state it does not know as Unknown", () => {
+    const snapshot = snapshotSchema.parse(rawSnapshot);
+
+    expect(snapshotSchema.parse({ ...snapshot, liquidity: { ...snapshot.liquidity, tape: { ...tape, state: "Busy" } } }).liquidity.tape?.state).toBe("Unknown");
+  });
+
+  it("should read a signal without thinTape as not thin, and keep it when it is set", () => {
+    const snapshot = snapshotSchema.parse(rawSnapshot);
+    const [first] = snapshot.orderFlow.signals;
+    if (!first) throw new Error("the captured snapshot has no signal");
+    const { thinTape: _t, ...older } = first;
+
+    const parsed = snapshotSchema.parse({ ...snapshot, orderFlow: { ...snapshot.orderFlow, signals: [older, { ...older, id: older.id + 1, thinTape: true }] } });
+
+    expect(parsed.orderFlow.signals.map((s) => s.thinTape === true)).toEqual([false, true]);
+  });
+
+  it("should read an older server's summary with no tape as null", () => {
+    const [row] = instrumentSummariesSchema.parse(rawInstruments);
+
+    expect(row?.summary.tape).toBeNull();
+  });
+});
+
 describe("deltaSchema", () => {
   it("should parse the captured delta when it is unchanged", () => {
     expect(deltaSchema.safeParse(rawDelta).success).toBe(true);

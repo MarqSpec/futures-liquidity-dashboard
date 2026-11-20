@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { SignalKind } from "../api/schemas.ts";
+import type { Regime, SignalKind } from "../api/schemas.ts";
 import { clampPriceShift, shiftPriceRange } from "../domain/bookmap.ts";
 import { aggregateCandles } from "../domain/candles.ts";
+import { conditionsFor } from "../domain/conditions.ts";
 import { formatTicks } from "../domain/format.ts";
 import { aggregateHeat } from "../domain/heat.ts";
 import {
@@ -20,12 +21,15 @@ import {
 import { indicatorsForViewer, type MarketState } from "../domain/merge.ts";
 import { lastPriceAnchor } from "../domain/priceLock.ts";
 import { rangeZonesFor } from "../domain/rangeZones.ts";
+import { listedGroupMarks, type GroupMark } from "../domain/signalClusters.ts";
 import { fitRange, zoomRange } from "../domain/scale.ts";
 import { clampWindow, LIVE_EDGE_PAD, panOffsetMs, zoomTimeAbout, type ViewWindow } from "../domain/viewWindow.ts";
 import type { CrosshairStore } from "../hooks/crosshair.ts";
 import { useFeedback } from "../hooks/useFeedback.ts";
 import { usePosition } from "../hooks/usePosition.ts";
 import { usePriceControls } from "../hooks/usePriceControls.ts";
+import { useSignalRows } from "../hooks/useSignalRows.ts";
+import { ConditionsPanel } from "./ConditionsPanel.tsx";
 import { DomLadder } from "./DomLadder.tsx";
 import { IndicatorDock } from "./IndicatorDock.tsx";
 import { LayersPanel } from "./LayersPanel.tsx";
@@ -33,6 +37,7 @@ import { LiquidityPanel } from "./LiquidityPanel.tsx";
 import { MainChart } from "./MainChart.tsx";
 import { OverlayPanel } from "./OverlayPanel.tsx";
 import { FeedbackPanel } from "./FeedbackPanel.tsx";
+import { GroupBand } from "./GroupBand.tsx";
 import { PositionLines } from "./PositionLines.tsx";
 import { PositionTicket } from "./PositionTicket.tsx";
 import { PriceControls } from "./PriceControls.tsx";
@@ -51,9 +56,12 @@ export interface MarketViewProps {
   readonly onTogglePane: (pane: PaneId, on: boolean) => void;
   readonly onToggleKind: (kind: SignalKind, on: boolean) => void;
   readonly onReading?: (change: (current: LayoutSettings) => LayoutSettings) => void;
+  /** The selected product's regimes from the polled summary (REQUIREMENTS.md FR-56); none until the list has it. */
+  readonly regimes?: readonly Regime[];
 }
 
 const emaIds = ["ema10", "ema13", "ema24", "ema48", "ema200"] as const;
+const noRegimes: readonly Regime[] = [];
 const profileWindows = [
   ["5d", "profile-5d"],
   ["session", "profile-session"],
@@ -62,7 +70,7 @@ const profileWindows = [
 ] as const;
 
 /** Every pane for one instrument's state: the chart column and the always-visible side column. */
-export function MarketView({ market, layout, viewWindow, crosshair, onWindow, onResetWindow, onTogglePane, onToggleKind, onReading }: MarketViewProps) {
+export function MarketView({ market, layout, viewWindow, crosshair, onWindow, onResetWindow, onTogglePane, onToggleKind, onReading, regimes = noRegimes }: MarketViewProps) {
   const [profileWindow, setProfileWindow] = useState<string>("session");
   const windowRef = useRef(viewWindow);
   const historyRef = useRef(market.historyMinutes * 60_000);
@@ -80,6 +88,12 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     setPriceShift(null);
   }
   const shiftTicks = !switchingInstrument && priceShift?.root === market.root ? priceShift.ticks : 0;
+  // — the Signals panel's group the chart marks (FR-82, D-69)
+  const [hoveredGroup, setHoveredGroup] = useState<{ root: string; key: string } | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<{ root: string; key: string } | null>(null);
+  const root = market.root;
+  const hoverGroup = useCallback((mark: GroupMark | null) => setHoveredGroup(mark ? { root, key: mark.key } : null), [root]);
+  const selectGroup = useCallback((mark: GroupMark | null) => setSelectedGroup(mark ? { root, key: mark.key } : null), [root]);
   const spec = market.instrument;
   const historyMs = market.historyMinutes * 60_000;
   const view = clampWindow(viewWindow, historyMs);
@@ -88,6 +102,18 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
   const startMs = endMs - view.spanMs;
   const paneOn = (pane: PaneId) => isPaneOn(layout, pane);
   const kindOn = (kind: string) => isSignalOn(layout, kind);
+  const floors = icebergFloors(layout);
+  const listedRows = useSignalRows(market.orderFlow.signals, kindOn, floors);
+  // Held keys resolve to the groups listed now: a group's mark follows it as it grows and goes when it does.
+  const listedMarks = listedGroupMarks(listedRows);
+  const resolve = (held: { root: string; key: string } | null) => (held?.root === market.root ? (listedMarks.get(held.key) ?? null) : null);
+  const hoveredMark = resolve(hoveredGroup);
+  const selectedMark = resolve(selectedGroup);
+  // A key whose group is gone is dropped, so a row that unmounts under the pointer or a group that re-forms later
+  // does not bring a stale mark back.
+  if (hoveredGroup && !hoveredMark) setHoveredGroup(null);
+  if (selectedGroup && !selectedMark) setSelectedGroup(null);
+  const markedGroup = hoveredMark ?? selectedMark;
   // Over the server's depth cap, or with depth off, a product streams trades and quotes only: its heat and DOM
   // panes stay empty rather than show a book the server no longer keeps.
   const depth = market.status.depthSubscribed;
@@ -141,6 +167,20 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
     [market.indicators, layout.indicatorMinutes],
   );
   const chartMarket = useMemo(() => ({ ...market, indicators }), [market, indicators]);
+  // — fixed-definition states, never a score (FR-81, D-67)
+  const conditions = useMemo(
+    () =>
+      conditionsFor({
+        indicators,
+        indicatorMinutes: layout.indicatorMinutes,
+        vwap: market.vwap,
+        book: market.liquidity,
+        profiles: market.profiles,
+        regimes,
+        spec,
+      }),
+    [indicators, layout.indicatorMinutes, market.vwap, market.liquidity, market.profiles, regimes, spec],
+  );
 
   // Notches read this ref outside the state updater, so a trackpad burst stays on the same instant.
   const commitWindow = (next: ViewWindow) => {
@@ -271,6 +311,7 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
             emaIds: emaIds.filter((id) => paneOn(id)),
             vwap: paneOn("vwap"),
             overlay: paneOn("overlay"),
+            lineTags: paneOn("line-tags"),
             signals: chartSignals,
             isKindOn: kindOn,
             rangeZones: rangeZonesFor(market.rangeZones, layout),
@@ -296,15 +337,18 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
           onReleaseLock={priceActions.releaseLock}
           onAltPlace={onReading ? (priceTicks, spanTicks) => positionEditor.place(priceTicks, anchorTicks, spanTicks) : undefined}
           renderOverlay={(frame) => (
-            <PositionLines
-              position={positionEditor.position}
-              spec={spec}
-              frame={frame}
-              notice={positionEditor.notice}
-              onApply={positionEditor.apply}
-              ghosts={feedback.ghosts}
-              onApplyGhost={feedback.applyGhost}
-            />
+            <>
+              <GroupBand mark={markedGroup} frame={frame} spec={spec} />
+              <PositionLines
+                position={positionEditor.position}
+                spec={spec}
+                frame={frame}
+                notice={positionEditor.notice}
+                onApply={positionEditor.apply}
+                ghosts={feedback.ghosts}
+                onApplyGhost={feedback.applyGhost}
+              />
+            </>
           )}
         />
         <IndicatorDock
@@ -324,15 +368,20 @@ export function MarketView({ market, layout, viewWindow, crosshair, onWindow, on
       </div>
       <aside className="side-column" aria-label="Depth, liquidity and signals">
         {paneOn("ladder") && <DomLadder market={market} isKindOn={kindOn} fold={fold("ladder")} />}
+        <ConditionsPanel conditions={conditions} fold={fold("conditions")} />
         <LiquidityPanel liquidity={market.liquidity} spec={spec} nowMs={market.serverTimeMs} fold={fold("liquidity")} />
         <SignalsPanel
           signals={market.orderFlow.signals}
           spec={spec}
           isKindOn={kindOn}
           onToggleKind={onToggleKind}
-          floors={icebergFloors(layout)}
+          floors={floors}
+          rows={listedRows}
           onFloors={onReading ? (floors) => onReading((current) => withIcebergFloors(current, floors)) : undefined}
           fold={fold("signals")}
+          onHoverGroup={hoverGroup}
+          selectedGroup={selectedMark?.key ?? null}
+          onSelectGroup={selectGroup}
         />
         <OverlayPanel overlay={market.overlay} spec={spec} shown={paneOn("overlay")} fold={fold("levels")} touches={market.levelTouches} />
         {showProfile && (

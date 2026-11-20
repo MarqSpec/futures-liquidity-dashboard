@@ -9,6 +9,7 @@ import {
   isSignalOn,
   isWatched,
   orderedHeatCutoffs,
+  sideSections,
   toLayout,
   watchlistLimit,
   withDetailChart,
@@ -122,6 +123,20 @@ describe("isPaneOn", () => {
 
   it("should be off when the pane was toggled off", () => {
     expect(isPaneOn(withPane(defaultLayout, "tpo", false), "tpo")).toBe(false);
+  });
+
+  it("should show the agent Levels on the chart when a new layout does not mention them", () => {
+    expect(isPaneOn(defaultLayout, "overlay")).toBe(true);
+  });
+
+  it("should keep the agent Levels off when a saved layout turned them off", () => {
+    expect(isPaneOn(toLayout({ panes: { overlay: false } }), "overlay")).toBe(false);
+  });
+
+  it("should show the line tags until the viewer turns them off, and save that choice", () => {
+    expect(isPaneOn(defaultLayout, "line-tags")).toBe(true);
+    expect(isPaneOn(withPane(defaultLayout, "line-tags", false), "line-tags")).toBe(false);
+    expect(toLayout({ panes: { "line-tags": false } }).panes).toEqual({ "line-tags": false });
   });
 });
 
@@ -237,6 +252,15 @@ describe("isSignalOn", () => {
     expect(toLayout({ ...defaultLayout, sideSectionsCollapsed: ["layers", "ladder"] }).sideSectionsCollapsed).toEqual(["ladder", "layers"]);
     expect(toLayout({ ...defaultLayout, sideSectionsCollapsed: "ladder" }).sideSectionsCollapsed).toEqual([]);
     expect(toLayout({ ...defaultLayout, sideSectionsCollapsed: null }).sideSectionsCollapsed).toEqual([]);
+  });
+
+  it("should keep the Conditions section's key in column order, after the ladder, when a served layout folds it", () => {
+    expect(sideSections).toEqual(["ladder", "conditions", "liquidity", "signals", "levels", "profile", "layers"]);
+    expect(toLayout({ ...defaultLayout, sideSectionsCollapsed: ["liquidity", "conditions", "ladder"] }).sideSectionsCollapsed).toEqual([
+      "ladder",
+      "conditions",
+      "liquidity",
+    ]);
   });
 
   it("should drop a side-section key the API would refuse when a served layout names one", () => {

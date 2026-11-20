@@ -1491,6 +1491,8 @@ p {
 .ld-ladder-scroll {
   max-height: 360px;
   overflow: auto;
+  /* While following, the component owns the scroll position; browser anchoring must not shift it. */
+  overflow-anchor: none;
 }
 
 .ld-ladder {
@@ -1628,6 +1630,23 @@ p {
 .ld-signal--neutral .ld-dot { background: var(--bias-neutral); }
 .ld-signal--neutral .kind { color: var(--bias-neutral); }
 
+/* a signal raised while the tape was thin is tagged, and its dot and kind dimmed; the text stays readable. */
+.ld-signal--thin .ld-dot,
+.ld-signal--thin .kind { opacity: 0.45; }
+.ld-signal .tape-tag { grid-column: 1 / -1; justify-self: start; margin-top: var(--space-2); }
+
+.tape-tag {
+  padding: 0 var(--space-4);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+  color: var(--on-surface-variant);
+  font: 600 10px/14px var(--font-mono);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ld-metrics .tape-thin { color: var(--on-surface-variant); font-weight: 600; text-transform: uppercase; }
+
 /* neighbouring icebergs as one row; its members open beneath it. */
 .ld-cluster-members {
   grid-column: 1 / -1;
@@ -1641,6 +1660,66 @@ p {
 }
 
 .ld-cluster-members > .ld-list { margin-top: var(--space-4); }
+
+.ld-cluster-members .ld-more {
+  color: var(--on-surface-muted);
+  font: 400 11px/16px var(--font-sans);
+}
+
+/* — Conditions (FR-81). States are
+   neutral text, never coloured by direction; a reading that is not a state is muted and italic. */
+.ld-condition {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 var(--space-8);
+  align-items: baseline;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--surface-high);
+}
+
+.ld-condition .name { font: 700 12px/16px var(--font-sans); }
+.ld-condition .reading { font: 700 12px/16px var(--font-mono); text-align: right; }
+.ld-condition .reading:not([data-reading="state"]) { color: var(--on-surface-muted); font-style: italic; font-weight: 400; }
+
+.ld-condition .value {
+  grid-column: 1 / -1;
+  color: var(--on-surface-variant);
+  font: 400 11px/15px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.ld-condition .definition {
+  grid-column: 1 / -1;
+  color: var(--on-surface-muted);
+  font: 400 11px/15px var(--font-sans);
+}
+
+.ld-conditions-note {
+  margin: var(--space-6) 0 0;
+  color: var(--on-surface-muted);
+  font: 400 11px/15px var(--font-sans);
+}
+
+/* signals of several kinds at one place and time. No bias colour: a group has no direction (FR-82). */
+.ld-signal--group {
+  border: 1px dashed var(--outline-variant);
+}
+
+.ld-signal--group .ld-dot {
+  background: transparent;
+  border: 1px solid var(--on-surface-muted);
+}
+
+.ld-signal--group .kind { color: var(--on-surface); }
+
+.ld-signal--group.ld-signal:hover,
+.ld-signal--group.ld-signal:focus-within,
+.ld-signal--selected {
+  border-color: var(--primary);
+}
+
+.ld-group-mark { justify-self: start; grid-column: 1 / -1; margin-top: var(--space-4); }
 
 .ld-level {
   display: flex;
@@ -1939,6 +2018,41 @@ p {
   line-height: 15px;
   text-align: center;
   transform: translateY(-50%);
+}
+
+/* the hovered or selected signal group's price range, under the position lines. */
+.group-band-layer {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-chart-overlay);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.group-band {
+  position: absolute;
+  box-sizing: border-box;
+  border-block: 1px dashed var(--primary);
+}
+
+.group-band::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--primary-container);
+  opacity: 0.45;
+}
+
+.group-band-label {
+  position: absolute;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--scrim-chart);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .position-offscreen {
@@ -3037,4 +3151,16 @@ legend {
   padding: 0;
   border-radius: var(--radius-sm);
   font-size: 12px;
+}
+
+.ld-ladder-centre {
+  margin: 0 0 4px auto;
+  display: block;
+  padding: 2px 8px;
+  font: 600 11px/16px var(--font-sans);
+  color: var(--on-surface);
+  background: transparent;
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  cursor: pointer;
 }

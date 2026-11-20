@@ -1,4 +1,5 @@
 using MarqSpec.FuturesLiquidityDashboard.Core.Indicators;
+using MarqSpec.FuturesLiquidityDashboard.Core.Liquidity;
 using MarqSpec.FuturesLiquidityDashboard.Core.OrderFlow;
 using MarqSpec.FuturesLiquidityDashboard.Core.Regime;
 
@@ -53,6 +54,9 @@ public sealed record EngineOptions
 
     /// <summary>Trend-versus-range classification per bar timeframe (REQUIREMENTS.md FR-56).</summary>
     public RegimeOptions Regime { get; init; } = RegimeOptions.Default;
+
+    /// <summary>The thin-tape rule: trade rate against its own recent median (REQUIREMENTS.md FR-83).</summary>
+    public TapeOptions Tape { get; init; } = TapeOptions.Default;
 
     public static EngineOptions Default { get; } = new();
 }

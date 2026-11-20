@@ -40,7 +40,8 @@ public sealed record MarketSummaryDto(
     long? LastTradeMs,
     OrderFlowSignal? LatestSignal = null,
     int Signals15m = 0,
-    IReadOnlyList<RegimeDto>? Regimes = null);
+    IReadOnlyList<RegimeDto>? Regimes = null,
+    TapeReading? Tape = null);
 
 /// <summary>
 /// The status chip of REQUIREMENTS.md FR-4: LIVE, REPLAY or SIMULATED when healthy, DEGRADED while a dropped-trade gap

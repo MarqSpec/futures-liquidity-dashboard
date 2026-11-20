@@ -4,6 +4,7 @@ import { rgbTriplet } from "../design/color.ts";
 import { color, fontFamilies } from "../design/tokens.ts";
 import { READ_ONLY_TRAIL, WARMUP_NO_L2, bookmapFrame, bookmapScales } from "../domain/bookmap.ts";
 import { eventMarker } from "../domain/signals.ts";
+import { THIN_TAPE_ALPHA } from "../domain/tape.ts";
 import { canvasFaces } from "../lib/canvasFonts.ts";
 import { bookmapModel } from "../test/bookmapFixtures.ts";
 import { fakeSurface, type CanvasCall } from "../test/fakeCanvas.ts";
@@ -469,6 +470,19 @@ describe("drawBookmap heat scale", () => {
 
   it("should report no scale when no heat is in view", () => {
     expect(scaleOf({ heatColumns: [] })).toBeNull();
+  });
+});
+
+// (REQUIREMENTS.md FR-83)
+describe("drawBookmap thin-tape markers", () => {
+  it("should dim an event marker raised on a thin tape and leave the others at full strength", () => {
+    const strokeAlpha = (thinTape: boolean) => {
+      const { surface, calls } = fakeSurface(1100, 640);
+      drawBookmap(surface, model({ signals: [{ timeMs: 80_000, priceTicks: 107, kind: "Spoof", inferred: true, thinTape }] }));
+      return calls.find((call) => call.method === "stroke" && call.strokeStyle === eventMarker("Spoof").color)?.globalAlpha;
+    };
+
+    expect([strokeAlpha(true), strokeAlpha(false)]).toEqual([THIN_TAPE_ALPHA, 1]);
   });
 });
 

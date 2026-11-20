@@ -20,6 +20,7 @@ const groups: readonly { readonly title: string; readonly panes: readonly (reado
       ["heatmap", "Liquidity heatmap"],
       ["vwap", "Session VWAP ±1σ ±2σ"],
       ["overlay", "Agent overlay"],
+      ["line-tags", "Line tags on the price axis"],
     ],
   },
   {
