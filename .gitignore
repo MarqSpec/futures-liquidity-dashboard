@@ -488,5 +488,5 @@ $RECYCLE.BIN/
 *.jks
 *.keystore
 
-# The feedback budget file a local run writes.
+# The files a local run writes: the feedback budget and saved layouts.
 src/MarqSpec.FuturesLiquidityDashboard.Api/data/

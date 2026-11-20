@@ -157,15 +157,22 @@ public static class DashboardEndpoints
                 : TypedResults.UnprocessableEntity(new ProblemDetailsBody(result.Rejection.ToString(), result.Message));
         });
 
-        api.MapGet("/layouts/me", Results<Ok<LayoutDocument>, ForbidHttpResult> (ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion) =>
-            HasAny(user, Permissions.ViewDashboard)
-                ? TypedResults.Ok(layouts.Get(user.Identity?.Name ?? string.Empty).WithActivePositions(registry, ingestion.HistoryLoaded))
-                : TypedResults.Forbid());
+        api.MapGet("/layouts/me", async Task<Results<Ok<LayoutDocument>, ForbidHttpResult>> (
+            ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion, CancellationToken cancellationToken) =>
+        {
+            if (!HasAny(user, Permissions.ViewDashboard))
+            {
+                return TypedResults.Forbid();
+            }
+
+            var stored = await layouts.GetAsync(user.Identity?.Name ?? string.Empty, cancellationToken).ConfigureAwait(false);
+            return TypedResults.Ok(stored.WithActivePositions(registry, ingestion.HistoryLoaded));
+        });
 
         // indicatorMinutes is a viewer preference. The engines keep every timeframe; the hub sends one connection
         // the series it subscribed with. A save must not retune shared engine state.
-        api.MapPut("/layouts/me", Results<Ok<LayoutDocument>, Conflict<LayoutDocument>, ValidationProblem, ForbidHttpResult> (
-            LayoutWrite body, ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion) =>
+        api.MapPut("/layouts/me", async Task<Results<Ok<LayoutDocument>, Conflict<LayoutDocument>, ValidationProblem, ProblemHttpResult, ForbidHttpResult>> (
+            LayoutWrite body, ClaimsPrincipal user, LayoutStore layouts, EngineRegistry registry, IngestionState ingestion, CancellationToken cancellationToken) =>
         {
             if (body.Layout is null)
             {
@@ -178,14 +185,25 @@ public static class DashboardEndpoints
             }
 
             var userName = user.Identity?.Name ?? string.Empty;
-            var layout = body.Layout.PreservingStoredOmissions(layouts.Get(userName).Layout);
+            var stored = await layouts.GetAsync(userName, cancellationToken).ConfigureAwait(false);
+            var layout = body.Layout.PreservingStoredOmissions(stored.Layout);
             var errors = layout.Validate();
             if (errors.Count > 0)
             {
                 return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["layout"] = [.. errors] });
             }
 
-            var saved = layouts.Save(userName, layout, body.Revision);
+            var saved = await layouts.SaveAsync(userName, layout, body.Revision, cancellationToken).ConfigureAwait(false);
+            if (saved.StoreFailed)
+            {
+                // No path or exception text: those are in the server log only.
+                return TypedResults.Problem(
+                    title: "Layout store unavailable",
+                    detail: "The layout could not be written, so nothing was saved. The stored layout and revision are unchanged; send it again.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    extensions: new Dictionary<string, object?> { ["reason"] = "layout-store-unavailable" });
+            }
+
             var served = saved.Document.WithActivePositions(registry, ingestion.HistoryLoaded);
             return saved.Applied ? TypedResults.Ok(served) : TypedResults.Conflict(served);
         });

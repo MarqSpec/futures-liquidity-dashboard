@@ -37,6 +37,8 @@ public class DashboardFactory : WebApplicationFactory<Program>
         builder.UseSetting("Agent:FirstRunSeconds", "0");
         builder.UseSetting("Agent:IntervalSeconds", "5");
         builder.UseSetting("Api:PublishMs", "100");
+        // Layouts in memory only, so a run neither writes a file nor reads one an earlier run saved.
+        builder.UseSetting("Layouts:StorePath", string.Empty);
         // Real "now" sits many hours after the Globex open, so warmup replays that whole session for every
         // product. Start the clock twenty minutes after the Monday open; it still advances, so the live feed runs.
         builder.ConfigureTestServices(services =>

@@ -41,7 +41,8 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<TimeProvider>(),
         root => registry.TryGet(root, out var engine) ? engine.Spec : InstrumentCatalog.For(root));
 });
-builder.Services.AddSingleton<LayoutStore>();
+// Saved layouts, kept in one file across restarts; market state is not (ARCHITECTURE.md D-18).
+builder.Services.AddLayoutStore(builder.Configuration);
 builder.Services.AddSingleton<BrowserSendGate>();
 builder.Services.AddSingleton<WatchTracker>();
 builder.Services.AddSingleton<DashboardMetrics>();

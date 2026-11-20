@@ -468,9 +468,10 @@ public sealed record LayoutSettings
 }
 
 /// <summary>
-/// A layout plus whether this process has one for the caller. <see cref="Saved"/> is false after a restart until a
-/// client re-sends a valid copy. <see cref="Revision"/> is a server-issued counter: 0 when nothing is stored, and
-/// one greater after each accepted save.
+/// A layout plus whether the store holds one for the caller. A save survives a restart (<see cref="LayoutStore"/>), so
+/// <see cref="Saved"/> is false only when the caller never saved or the store file was missing, unreadable or corrupt
+/// at start; a client then re-sends its valid copy. <see cref="Revision"/> is a server-issued counter: 0 when nothing
+/// is stored, and one greater after each accepted save, across restarts.
 /// </summary>
 public sealed record LayoutDocument
 {
@@ -520,55 +521,8 @@ public sealed record LayoutWrite
     public LayoutSettings? Layout { get; init; }
 }
 
-/// <summary>The outcome of a compare-and-set save. <see cref="Document"/> is what the store holds afterwards.</summary>
-public sealed record LayoutSaveResult(bool Applied, LayoutDocument Document);
-
 /// <summary>
-/// Layouts by user name for this process. Market state stays in memory (ARCHITECTURE.md D-18); a layout survives a
-/// restart because the browser keeps a valid copy and re-PUTs it when <see cref="Get"/> reports nothing saved.
-/// A save applies only when the caller's revision is the one stored, so a stale write cannot replace a later one.
+/// The outcome of a compare-and-set save. <see cref="Document"/> is what the store holds afterwards.
+/// <see cref="StoreFailed"/> is true when the revision matched but the file could not be written, so nothing was stored.
 /// </summary>
-public sealed class LayoutStore
-{
-    private readonly Lock _gate = new();
-    private readonly Dictionary<string, LayoutDocument> _layouts = new(StringComparer.Ordinal);
-
-    public LayoutDocument Get(string user)
-    {
-        ArgumentNullException.ThrowIfNull(user);
-        lock (_gate)
-        {
-            return _layouts.TryGetValue(user, out var layout) ? layout : Unsaved();
-        }
-    }
-
-    /// <summary>
-    /// Stores <paramref name="layout"/> when <paramref name="expectedRevision"/> equals the revision held for
-    /// <paramref name="user"/> (0 when nothing is saved). The stored revision becomes that value plus one.
-    /// Any other revision stores nothing and returns the document still held.
-    /// </summary>
-    public LayoutSaveResult Save(string user, LayoutSettings layout, long expectedRevision)
-    {
-        ArgumentNullException.ThrowIfNull(user);
-        ArgumentNullException.ThrowIfNull(layout);
-        lock (_gate)
-        {
-            var current = _layouts.TryGetValue(user, out var held) ? held : Unsaved();
-            if (expectedRevision != current.Revision)
-            {
-                return new LayoutSaveResult(false, current);
-            }
-
-            var stored = new LayoutDocument
-            {
-                Saved = true,
-                Revision = checked(current.Revision + 1),
-                Layout = layout,
-            };
-            _layouts[user] = stored;
-            return new LayoutSaveResult(true, stored);
-        }
-    }
-
-    private static LayoutDocument Unsaved() => new() { Saved = false, Revision = 0, Layout = new LayoutSettings() };
-}
+public sealed record LayoutSaveResult(bool Applied, LayoutDocument Document, bool StoreFailed = false);

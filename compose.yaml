@@ -31,7 +31,8 @@ services:
       # Optional overrides (DEPLOYMENT.md). Unset keeps LevelsPerSide 50 and LadderLevels 40.
       Feed__ProjectX__LevelsPerSide: ${Feed__ProjectX__LevelsPerSide:-50}
       Engine__LadderLevels: ${Engine__LadderLevels:-40}
-    # One named volume at /data keeps the Claude feedback budget across a restart.
+    # One named volume at /data keeps the feedback budget and saved layouts across a restart and a
+    # rebuild; `down -v` deletes them.
     volumes:
       - api-data:/data
 

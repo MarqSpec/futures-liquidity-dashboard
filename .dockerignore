@@ -35,3 +35,6 @@ compose.yaml
 src/dashboard/android/
 **/*.jks
 **/*.keystore
+
+# The files a local run writes under the API (the feedback budget; saved layouts): never in an image
+src/MarqSpec.FuturesLiquidityDashboard.Api/data/

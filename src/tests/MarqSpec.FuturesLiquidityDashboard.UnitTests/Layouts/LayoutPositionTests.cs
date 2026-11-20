@@ -56,12 +56,12 @@ public sealed class LayoutPositionTests
     }
 
     [Fact]
-    public void Save_ShouldServeALongAndAShortAsJson_WhenBothAreValid()
+    public async Task Save_ShouldServeALongAndAShortAsJson_WhenBothAreValid()
     {
         var layout = Layout($$"""{"MES":{{Long}},"MCL":{{Short}}}""");
         layout.Validate().Should().BeEmpty();
 
-        var saved = new LayoutStore().Save("viewer", layout, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", layout, 0, CancellationToken.None);
 
         saved.Applied.Should().BeTrue();
         using var served = JsonDocument.Parse(JsonSerializer.Serialize(saved.Document, Json));
@@ -116,18 +116,18 @@ public sealed class LayoutPositionTests
     }
 
     [Fact]
-    public void WithActivePositions_ShouldSurviveASaveOfAnotherField_WhenTheContractsAreNotYetResolved()
+    public async Task WithActivePositions_ShouldSurviveASaveOfAnotherField_WhenTheContractsAreNotYetResolved()
     {
         var registry = new EngineRegistry([InstrumentRoot.MES], EngineOptions.Default, TestData.Calendar());
-        var store = new LayoutStore();
-        store.Save("viewer", Stored("MESZ6").Layout, 0).Applied.Should().BeTrue();
+        var store = LayoutDisk.NewStore();
+        (await store.SaveAsync("viewer", Stored("MESZ6").Layout, 0, CancellationToken.None)).Applied.Should().BeTrue();
 
-        var read = store.Get("viewer").WithActivePositions(registry, contractsResolved: false);
+        var read = (await store.GetAsync("viewer", CancellationToken.None)).WithActivePositions(registry, contractsResolved: false);
         var other = JsonSerializer.Deserialize<LayoutSettings>("""{"historyMinutes":45}""", Json)!.PreservingStoredOmissions(read.Layout);
-        store.Save("viewer", other, read.Revision);
+        await store.SaveAsync("viewer", other, read.Revision, CancellationToken.None);
 
-        store.Get("viewer").Layout.Positions.Should().ContainKey("MES");
-        store.Get("viewer").Layout.HistoryMinutes.Should().Be(45);
+        (await store.GetAsync("viewer", CancellationToken.None)).Layout.Positions.Should().ContainKey("MES");
+        (await store.GetAsync("viewer", CancellationToken.None)).Layout.HistoryMinutes.Should().Be(45);
     }
 
     [Fact]

@@ -26,6 +26,7 @@ public sealed class FeedbackHostFactory : WebApplicationFactory<Program>
         ["Feed:Synthetic:StepMs"] = "50",
         ["Engine:Instruments:0"] = "MES",
         ["Agent:Enabled"] = "false",
+        ["Layouts:StorePath"] = string.Empty,
         ["Auth:Keys:0:Name"] = "feedback-viewer",
         ["Auth:Keys:0:KeySha256"] = ApiKeyAuthenticationHandler.HashKey(FeedbackViewerKey),
         ["Auth:Keys:0:Grants:0"] = "view-dashboard:MES",

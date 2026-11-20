@@ -40,9 +40,12 @@ LABEL org.opencontainers.image.title="MarqSpec.FuturesLiquidityDashboard.Api" \
       org.opencontainers.image.revision="${REVISION}"
 WORKDIR /app
 COPY --from=build /app ./
-# The feedback budget file's directory: owned by the app user so a named volume mounted here is writable.
-RUN mkdir /data && chown $APP_UID /data
+# The API's small JSON stores live on the volume mounted at /data: the feedback budget and saved layouts
+# (ARCHITECTURE.md D-18). The directory belongs to the app user, so a new named volume, which takes its
+# ownership from the image, is writable without root.
+RUN mkdir /data && chown "$APP_UID" /data
 ENV Feedback__BudgetStorePath=/data/feedback-budget.json
+ENV Layouts__StorePath=/data/layouts.json
 # The base image's non-root user.
 USER $APP_UID
 EXPOSE 8080

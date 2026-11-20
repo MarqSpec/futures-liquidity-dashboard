@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The feedback budget file is runtime data: never published, never in the image. -->
+    <!-- The feedback budget and saved layouts are runtime data: never published, never in the image. -->
     <Content Remove="data/**" />
     <None Remove="data/**" />
   </ItemGroup>

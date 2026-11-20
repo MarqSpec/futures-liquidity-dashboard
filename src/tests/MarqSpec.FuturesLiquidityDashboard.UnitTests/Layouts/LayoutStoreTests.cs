@@ -5,15 +5,15 @@ using MarqSpec.FuturesLiquidityDashboard.Api.Layouts;
 namespace MarqSpec.FuturesLiquidityDashboard.UnitTests.Layouts;
 
 // reference: REQUIREMENTS.md FR-9; ARCHITECTURE.md D-18
-public sealed class LayoutStoreTests
+public sealed partial class LayoutStoreTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     [Fact]
-    public void Get_ShouldReportUnsaved_WhenTheUserHasNeverSaved()
+    public async Task Get_ShouldReportUnsaved_WhenTheUserHasNeverSaved()
     {
-        var store = new LayoutStore();
+        var store = LayoutDisk.NewStore();
 
-        var document = store.Get("viewer");
+        var document = await store.GetAsync("viewer", CancellationToken.None);
 
         document.Saved.Should().BeFalse();
         document.Revision.Should().Be(0);
@@ -22,12 +22,12 @@ public sealed class LayoutStoreTests
     }
 
     [Fact]
-    public void Save_ShouldIncrementTheRevision_WhenTheExpectedRevisionMatches()
+    public async Task Save_ShouldIncrementTheRevision_WhenTheExpectedRevisionMatches()
     {
-        var store = new LayoutStore();
+        var store = LayoutDisk.NewStore();
 
-        var first = store.Save("viewer", new LayoutSettings { Instrument = "MGC" }, 0);
-        var second = store.Save("viewer", new LayoutSettings { Instrument = "MCL", HistoryMinutes = 60 }, 1);
+        var first = await store.SaveAsync("viewer", new LayoutSettings { Instrument = "MGC" }, 0, CancellationToken.None);
+        var second = await store.SaveAsync("viewer", new LayoutSettings { Instrument = "MCL", HistoryMinutes = 60 }, 1, CancellationToken.None);
 
         first.Applied.Should().BeTrue();
         first.Document.Saved.Should().BeTrue();
@@ -37,11 +37,11 @@ public sealed class LayoutStoreTests
         second.Document.Revision.Should().Be(2);
         second.Document.Layout.Instrument.Should().Be("MCL");
         second.Document.Layout.HistoryMinutes.Should().Be(60);
-        store.Get("viewer").Revision.Should().Be(2);
+        (await store.GetAsync("viewer", CancellationToken.None)).Revision.Should().Be(2);
     }
 
     [Fact]
-    public void Save_ShouldKeepTheRipsPreset_WhenValueAreaIsHidden()
+    public async Task Save_ShouldKeepTheRipsPreset_WhenValueAreaIsHidden()
     {
         var layout = new LayoutSettings
         {
@@ -54,7 +54,7 @@ public sealed class LayoutStoreTests
             HeatAutoContrast = true,
         };
 
-        var saved = new LayoutStore().Save("viewer", layout, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", layout, 0, CancellationToken.None);
 
         saved.Applied.Should().BeTrue();
         saved.Document.Layout.Preset.Should().Be("rips");
@@ -84,9 +84,9 @@ public sealed class LayoutStoreTests
     }
 
     [Fact]
-    public void Save_ShouldKeepTheIndicatorPane_WhenTheTabIsOneOfTheDock()
+    public async Task Save_ShouldKeepTheIndicatorPane_WhenTheTabIsOneOfTheDock()
     {
-        var saved = new LayoutStore().Save("viewer", new LayoutSettings { IndicatorPane = "macd" }, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", new LayoutSettings { IndicatorPane = "macd" }, 0, CancellationToken.None);
 
         saved.Applied.Should().BeTrue();
         saved.Document.Layout.IndicatorPane.Should().Be("macd");
@@ -188,7 +188,7 @@ public sealed class LayoutStoreTests
     }
 
     [Fact]
-    public void PreservingStoredOmissions_ShouldKeepTheDetailChart_WhenTheJsonOmitsTheField()
+    public async Task PreservingStoredOmissions_ShouldKeepTheDetailChart_WhenTheJsonOmitsTheField()
     {
         new LayoutSettings().DetailChart.Should().Be("footprint", "Detail opens on the footprint");
         using var fresh = JsonDocument.Parse(JsonSerializer.Serialize(new LayoutSettings(), Json));
@@ -202,12 +202,12 @@ public sealed class LayoutStoreTests
         var explicitDefault = JsonSerializer.Deserialize<LayoutSettings>("""{"detailChart":"footprint"}""", Json);
         explicitDefault!.PreservingStoredOmissions(stored).DetailChart.Should().Be("footprint", "an explicit default replaces the stored value");
 
-        var saved = new LayoutStore().Save("viewer", JsonSerializer.Deserialize<LayoutSettings>("""{"detailChart":"price"}""", Json)!, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", JsonSerializer.Deserialize<LayoutSettings>("""{"detailChart":"price"}""", Json)!, 0, CancellationToken.None);
         saved.Document.Layout.DetailChart.Should().Be("price");
     }
 
     [Fact]
-    public void Save_ShouldRoundTripTheCollapsedDock_WhenTheLayoutCollapsesIt()
+    public async Task Save_ShouldRoundTripTheCollapsedDock_WhenTheLayoutCollapsesIt()
     {
         new LayoutSettings().IndicatorDockCollapsed.Should().BeFalse("the dock starts expanded");
         var collapsed = JsonSerializer.Deserialize<LayoutSettings>("""{"indicatorDockCollapsed":true}""", Json);
@@ -215,7 +215,7 @@ public sealed class LayoutStoreTests
         collapsed!.IndicatorDockCollapsed.Should().BeTrue();
         collapsed.Validate().Should().BeEmpty();
 
-        var saved = new LayoutStore().Save("viewer", collapsed, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", collapsed, 0, CancellationToken.None);
 
         saved.Applied.Should().BeTrue();
         saved.Document.Layout.IndicatorDockCollapsed.Should().BeTrue();
@@ -254,7 +254,7 @@ public sealed class LayoutStoreTests
     }
 
     [Fact]
-    public void Save_ShouldRoundTripTheCollapsedSideSections_WhenTheLayoutCollapsesThem()
+    public async Task Save_ShouldRoundTripTheCollapsedSideSections_WhenTheLayoutCollapsesThem()
     {
         new LayoutSettings().SideSectionsCollapsed.Should().BeEmpty("every side-column section starts open");
         var collapsed = JsonSerializer.Deserialize<LayoutSettings>("""{"sideSectionsCollapsed":["ladder","layers"]}""", Json);
@@ -262,7 +262,7 @@ public sealed class LayoutStoreTests
         collapsed!.SideSectionsCollapsed.Should().Equal("ladder", "layers");
         collapsed.Validate().Should().BeEmpty();
 
-        var saved = new LayoutStore().Save("viewer", collapsed, 0);
+        var saved = await LayoutDisk.NewStore().SaveAsync("viewer", collapsed, 0, CancellationToken.None);
 
         saved.Applied.Should().BeTrue();
         saved.Document.Layout.SideSectionsCollapsed.Should().Equal("ladder", "layers");
@@ -471,85 +471,68 @@ public sealed class LayoutStoreTests
     [InlineData(60_000)]
     [InlineData(60_001)]
     [InlineData(1_700_000_000_000)]
-    public void Save_ShouldKeepTheStoredLayout_WhenTheExpectedRevisionDoesNotMatch(long expected)
+    public async Task Save_ShouldKeepTheStoredLayout_WhenTheExpectedRevisionDoesNotMatch(long expected)
     {
-        var store = new LayoutStore();
-        store.Save("viewer", new LayoutSettings { Instrument = "MGC" }, 0);
+        var store = LayoutDisk.NewStore();
+        await store.SaveAsync("viewer", new LayoutSettings { Instrument = "MGC" }, 0, CancellationToken.None);
 
-        var refused = store.Save("viewer", new LayoutSettings { Instrument = "MCL" }, expected);
+        var refused = await store.SaveAsync("viewer", new LayoutSettings { Instrument = "MCL" }, expected, CancellationToken.None);
 
         refused.Applied.Should().BeFalse();
         refused.Document.Saved.Should().BeTrue();
         refused.Document.Revision.Should().Be(1);
         refused.Document.Layout.Instrument.Should().Be("MGC");
-        store.Get("viewer").Layout.Instrument.Should().Be("MGC");
-        store.Get("viewer").Revision.Should().Be(1);
+        (await store.GetAsync("viewer", CancellationToken.None)).Layout.Instrument.Should().Be("MGC");
+        (await store.GetAsync("viewer", CancellationToken.None)).Revision.Should().Be(1);
     }
 
     [Theory]
     [InlineData(-60_000)]
     [InlineData(60_000)]
     [InlineData(60_001)]
-    public void Save_ShouldIgnoreAClockRevision_WhenNothingHasBeenSaved(long skewMs)
+    public async Task Save_ShouldIgnoreAClockRevision_WhenNothingHasBeenSaved(long skewMs)
     {
-        var store = new LayoutStore();
+        var store = LayoutDisk.NewStore();
         var wallClock = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + skewMs;
 
-        var refused = store.Save("viewer", new LayoutSettings { Instrument = "MCL" }, wallClock);
+        var refused = await store.SaveAsync("viewer", new LayoutSettings { Instrument = "MCL" }, wallClock, CancellationToken.None);
 
         refused.Applied.Should().BeFalse();
         refused.Document.Saved.Should().BeFalse();
         refused.Document.Revision.Should().Be(0);
-        store.Get("viewer").Saved.Should().BeFalse();
-        store.Get("viewer").Layout.Instrument.Should().Be("MES");
+        (await store.GetAsync("viewer", CancellationToken.None)).Saved.Should().BeFalse();
+        (await store.GetAsync("viewer", CancellationToken.None)).Layout.Instrument.Should().Be("MES");
     }
 
     [Fact]
-    public void Save_ShouldApplyOnlyOne_WhenTwoSavesRaceOnTheSameRevision()
+    public async Task Save_ShouldApplyOnlyOne_WhenTwoSavesRaceOnTheSameRevision()
     {
-        var store = new LayoutStore();
-        var gate = new object();
-        var results = new List<LayoutSaveResult>(2);
-
-        Parallel.Invoke(
-            () =>
-            {
-                var saved = store.Save("viewer", new LayoutSettings { Instrument = "MGC" }, 0);
-                lock (gate)
-                {
-                    results.Add(saved);
-                }
-            },
-            () =>
-            {
-                var saved = store.Save("viewer", new LayoutSettings { Instrument = "MCL" }, 0);
-                lock (gate)
-                {
-                    results.Add(saved);
-                }
-            });
+        var store = LayoutDisk.NewStore();
+        var results = await Task.WhenAll(
+            Task.Run(() => store.SaveAsync("viewer", new LayoutSettings { Instrument = "MGC" }, 0, CancellationToken.None)),
+            Task.Run(() => store.SaveAsync("viewer", new LayoutSettings { Instrument = "MCL" }, 0, CancellationToken.None)));
 
         results.Should().ContainSingle(result => result.Applied);
         results.Should().ContainSingle(result => !result.Applied);
         var applied = results.Single(result => result.Applied);
-        store.Get("viewer").Revision.Should().Be(1);
-        store.Get("viewer").Layout.Instrument.Should().Be(applied.Document.Layout.Instrument);
+        (await store.GetAsync("viewer", CancellationToken.None)).Revision.Should().Be(1);
+        (await store.GetAsync("viewer", CancellationToken.None)).Layout.Instrument.Should().Be(applied.Document.Layout.Instrument);
         results.Single(result => !result.Applied).Document.Layout.Instrument.Should().Be(applied.Document.Layout.Instrument);
     }
 
     [Fact]
-    public void Save_ShouldKeepEachUserApart_WhenTwoViewersSave()
+    public async Task Save_ShouldKeepEachUserApart_WhenTwoViewersSave()
     {
-        var store = new LayoutStore();
+        var store = LayoutDisk.NewStore();
 
-        store.Save("alice", new LayoutSettings { Instrument = "MGC" }, 0);
-        store.Save("bob", new LayoutSettings { Instrument = "MCL" }, 0);
+        await store.SaveAsync("alice", new LayoutSettings { Instrument = "MGC" }, 0, CancellationToken.None);
+        await store.SaveAsync("bob", new LayoutSettings { Instrument = "MCL" }, 0, CancellationToken.None);
 
-        store.Get("alice").Layout.Instrument.Should().Be("MGC");
-        store.Get("alice").Revision.Should().Be(1);
-        store.Get("bob").Layout.Instrument.Should().Be("MCL");
-        store.Get("bob").Revision.Should().Be(1);
-        store.Get("cara").Saved.Should().BeFalse();
-        store.Get("cara").Revision.Should().Be(0);
+        (await store.GetAsync("alice", CancellationToken.None)).Layout.Instrument.Should().Be("MGC");
+        (await store.GetAsync("alice", CancellationToken.None)).Revision.Should().Be(1);
+        (await store.GetAsync("bob", CancellationToken.None)).Layout.Instrument.Should().Be("MCL");
+        (await store.GetAsync("bob", CancellationToken.None)).Revision.Should().Be(1);
+        (await store.GetAsync("cara", CancellationToken.None)).Saved.Should().BeFalse();
+        (await store.GetAsync("cara", CancellationToken.None)).Revision.Should().Be(0);
     }
 }
