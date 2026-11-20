@@ -158,6 +158,14 @@ test faked: routes, the hub, authentication, the read-only guard and metrics. Ev
 `Deployment` trait; the classes that need nothing outside the machine run with
 `dotnet test src/tests/MarqSpec.FuturesLiquidityDashboard.IntegrationTests --filter "Deployment=None"`.
 
+- **The real disk under a seam the unit tests fake is tested here.** The file stores reach the disk only through
+  `IFeedbackBudgetFiles` and `ILayoutFileSystem`, which §8.1 fakes, so their real adapters,
+  `PhysicalFeedbackBudgetFiles` and `PhysicalLayoutFileSystem`, are tested in this tier, each test in its own
+  directory under the system temp folder that is deleted afterwards (`IntegrationTests/TempDirectory.cs`).
+- **No integration host writes into the repository's content root.** `DashboardFactory` blanks
+  `Feedback:BudgetStorePath` and `Layouts:StorePath`, which keeps both stores in memory; a test that needs the disk
+  sets a temp path after it, and `DashboardFactoryTests` fails if either is left set.
+
 ## 9. Repository layout
 
 Base namespace and assembly prefix: `MarqSpec.FuturesLiquidityDashboard`. The solution is

@@ -7,20 +7,22 @@ How to configure, run, build, deploy and roll back the Live Futures Liquidity Da
 
 | Service | Built from | Port | Purpose |
 |---|---|---|---|
-| API | [`Dockerfile`](Dockerfile) | 8080 | The one deployable (D-11): the API, the SignalR hub, the hosted ingestion with the one market-data session for every instrument, the reference agent, health and metrics. Market state is in memory (D-18) |
+| API | [`Dockerfile`](Dockerfile) | 8080 | The one deployable (D-11): the API, the SignalR hub, the hosted ingestion with the one market-data session for every instrument, the reference agent, health and metrics. Market state is in memory (D-18); saved layouts and the feedback budget are small JSON files on one volume at `/data` (`api-data` in compose) |
 | dashboard | [`src/dashboard/Dockerfile`](src/dashboard/Dockerfile) | 8080 | nginx serving the built single-page app and proxying `/api`, `/health`, `/hubs` (WebSocket upgrade included) and `/metrics` to `API_UPSTREAM`, so the browser stays on one origin and the API needs no CORS policy |
 | `unit-tests` (compose profile `test`) | the `test` stage of [`Dockerfile`](Dockerfile) | — | Runs the unit tests while the stage builds; local only |
 | TopstepX gateway | external | — | Market data, only with `Feed:Provider=ProjectX`; outbound only ([`INTERFACES.md`](INTERFACES.md) A) |
 | Claude Messages API | external | — | Position feedback, only with `Feedback:Provider=Claude` enabled and a key; outbound HTTPS, one call per request a viewer makes, carrying derived metrics and the key ([`INTERFACES.md`](INTERFACES.md) E). Off in production until enabled; the Mock provider in Development makes no call |
 
-No database, cache or identity provider runs (D-16, D-18). The phone app is the dashboard image, installed as a
-PWA (§14).
+No database, cache or identity provider runs (D-16, D-18). The only files the API writes are two small JSON stores
+on one `/data` volume: `layouts.json`, every viewer's saved layout and simulated positions (D-18), and
+`feedback-budget.json`, the month's Claude spend (D-61). Neither holds a key or credential. The phone app is the
+dashboard image, installed as a PWA (§14).
 
 ## 2. Invariants
 
 | Invariant | What you see when it breaks |
 |---|---|
-| **Exactly one API instance per market-data account**, holding one upstream session for every instrument (D-7, D-11, T-5). On Railway: one replica and no deploy overlap ([`railway.toml`](railway.toml)) | A second instance opens a second session: the gateway may drop one, and each instance shows its own, diverging state |
+| **Exactly one API instance per market-data account**, holding one upstream session for every instrument and the one writer of the files on `/data` (D-7, D-11, D-18, T-5). On Railway: one replica and no deploy overlap ([`railway.toml`](railway.toml)) | A second instance opens a second session: the gateway may drop one, each instance shows its own, diverging state, and each overwrites the other's layouts |
 | **No order capability is configured or reachable** (FR-6, T-1) | `ReadOnlyGuardTests` fails, or a route or hub method outside [`INTERFACES.md`](INTERFACES.md) appears |
 | **A restart or reconnect never labels an old book current** (FR-4, FR-11) | The status says LIVE while `bookKnown` is false; it must say RECOVERING until the settle-window snapshot |
 | **A simulated or replayed market never says LIVE** (D-14) | `Feed:Provider` decides the label; nothing else can |
@@ -68,9 +70,9 @@ only as hashes.
 | `Feed__Depth__Pinned__0` … | no | `MES`, `MCL`, `MGC` | Products that always have depth, first in priority |
 | `Feed__Depth__MaxSubscriptions` | no | `8` (0 = no limit) | Most products with depth at once |
 | `Feed__Depth__ReleaseDelayMs` | no | `30000` | How long depth stays after a product's last viewer leaves |
-| `Feed__MinHistoryHours` | no | `4` (0–24) | Warmup reaches back to the session open or this many hours, whichever is earlier, and at least as far as the slowest regime timeframe needs; capped at 24 h |
+| `Feed__MinHistoryHours` | no | `4` (0–24) | Warmup reaches back to the session open or this many hours, whichever is earlier, and at least as far as the slowest regime timeframe needs and, with `Feed__WarmRegimes` true, far enough to hold 1,005 open-market minutes, which seeds EMA 200 on five-minute bars (D-68); capped at 24 h, and a need past that is logged as `WarmupCapped` |
 | `Feed__HistoryConcurrency` | no | `4` | Products whose warmup loads at once |
-| `Feed__WarmRegimes` | no | `true` | Load enough history for the slowest regime timeframe: with the defaults, 7 hours (FR-56). `false` uses `MinHistoryHours` only |
+| `Feed__WarmRegimes` | no | `true` | Load enough history for the slowest regime timeframe (7 hours, FR-56) and to seed EMA 200 on five-minute bars, so the default window is about 17 h 45 min mid-week (D-68). `false` uses `MinHistoryHours` only and shows the regime Unknown, and a slow EMA as warming up, until live bars arrive |
 | `Feed__TickMs` | no | `250` | The feeds' status cadence |
 | `Feed__Ingest__TradeCapacity` | no | `4096` | Trades waiting per contract (D-32). A further trade is counted and the contract is DEGRADED, not LIVE |
 | `Feed__Ingest__DepthLevelsPerContract` | no | `4096` | Distinct pending depth prices per contract; past this the book is dropped and the settle window restarts |
@@ -80,11 +82,13 @@ only as hashes.
 | `Engine__Instruments__0` … | no | `*` | `*` for every product the feed offers, or a list of roots (FR-10, FR-54) |
 | `Engine__ExcludeInstruments__0` … | no | none | Roots left out |
 | `Engine__Regime__*` | no | timeframes `300`, `900`; ADX 14, efficiency 20, EMA 13/48; thresholds 25, 0.30, 20, 0.20 | The regime (FR-56, D-27) |
+| `Engine__Tape__BaselineMinutes`, `Engine__Tape__ThinRatio` | no | `30`, `0.25` | The thin-tape rule: the tape is thin while the trade rate is under this share of its own median 10 s rate over this many minutes. Startup fails if the window is outside 1–1,440 or the share outside (0, 1] (FR-83, D-70) |
 | `Engine__SliceMs`, `__RetentionMinutes`, `__HistoryRetentionMinutes`, `__StaleAfterMs`, `__LadderLevels` | no | `1000`, `60`, `4320`, `3000`, `40` (5–200) | Slice length, one-second retention, minute retention (3 days), the STALE threshold (D-14), ladder depth. A book with fewer prices is sent as it arrived |
 | `Engine__OrderFlow__*` | no | [`REQUIREMENTS.md`](REQUIREMENTS.md) FR-41–FR-52 | Every order-flow threshold and the `Enable*` switch of each detector; `SignalHistoryCap` (20,000, clamped 1–100,000, D-41) |
 | `Api__PublishMs` | no | `250` | Delta period (NFR-1) |
 | `Api__PublishTimeoutMs` | no | `1000` | How long one browser may take a delta before its connection is aborted (D-32) |
 | `Api__MaxWatchlist` | no | `12` | Most starred products per viewer (FR-55) |
+| `Layouts__StorePath` | no | `data/layouts.json` under the content root; `/data/layouts.json` in the image | The file that keeps every viewer's saved layout, simulated positions and revision across restarts (FR-9, FR-72, D-18). A relative path is taken from the content root; one that names a directory (ends in `/` or `\`) fails startup; blank keeps layouts in memory only. Mount a volume at its directory, or a redeploy loses it. A missing or corrupt file starts empty with a warning, and a corrupt or unreadable one is renamed to `layouts.json.corrupt-<UTC time>` before the next save, never overwritten. Holds no key or credential |
 | `Auth__Keys__0__Name`, `__KeySha256`, `__Grants__0` … | outside Development | none | API keys: a name, the key's SHA-256 as 64 hex characters, and `permission:scope` grants (D-16). Outside Development the process refuses to start without at least one. The dashboard viewer needs `view-dashboard` and `configure-layout` |
 | `Auth__AnonymousGrants__0` … | no | none; all five in Development | Grants for a request with no key. Startup fails if any are set outside Development |
 | `Auth__ProtectDiagnostics` | no | unset: protected outside Development | `true` requires a key for `/health/ready`, `/metrics` and `/api/diagnostics/depth-width` even in Development; `false` leaves them anonymous everywhere. `/health/live` is always anonymous |
@@ -94,7 +98,8 @@ only as hashes.
 | `ANTHROPIC_API_KEY`, or `Feedback__ApiKey` | for `Claude` | none | **Secret.** The Claude API key; `Feedback__ApiKey` wins when both are set. Set it only as a service secret or in your shell, never in a file. With `Claude` enabled and no key, startup still succeeds and the POST answers 503 `no-key`. It is sent only to the Messages API and never logged, returned or put in an error (NFR-6, T-10) |
 | `Feedback__Model`, `Feedback__Effort` | no | `claude-opus-5-5`, `medium` | The model must be one the code prices (`claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`), so its spend can be counted; effort is `low`, `medium`, `high`, `xhigh` or `max`. Validated at start |
 | `Feedback__MaxTokens`, `Feedback__TimeoutSeconds`, `Feedback__MaxRetries` | no | `8000` (1,024–64,000), `60` (5–300), `2` (0–5) | Output cap with thinking included; the whole call's deadline; the SDK's retries of a 408, 409, 429 or 5xx inside it |
-| `Feedback__MonthlyBudgetUsd` | no | `100` (0 or more) | The month's Claude spend cap (NFR-9). At or over it the POST answers 429 until the next UTC month. **Counted in memory: a restart resets it to zero**, so it is a guard, not a bill |
+| `Feedback__MonthlyBudgetUsd` | no | `100` (0 or more) | The month's Claude spend cap (NFR-9). At or over it the POST answers 429 until the next UTC month. Kept in `Feedback__BudgetStorePath`, so a restart in the same month resumes it. It is a guard, not a bill |
+| `Feedback__BudgetStorePath` | no | `data/feedback-budget.json` under the content root; `/data/feedback-budget.json` in the image | The JSON file holding the month, its spend and the cap, written atomically. Mount one volume at `/data` (compose does). One API replica only. A missing file starts the month at zero; so does a corrupt or unreadable one (a file with no `spentUsd`, or a `month` not in `yyyy-MM` form, included), with a logged warning, and it is renamed to `<name>.corrupt-<utc>` before the next write. Blank keeps the count in memory only |
 | `Feedback__RequestsPerMinute` | no | `6` (1–60) | Requests one viewer may start in a sliding minute; one more is a 429 `rate-limited`. A viewer may also have only one request in flight |
 | `Feedback__ServerFallback`, `Feedback__BaseUrl` | no | `true`, `https://api.anthropic.com` | Opt in to the API's server-side fallback on a refusal; the Messages API origin, HTTPS only |
 | `API_UPSTREAM` | no | `http://futuresliquiditydashboard.api:8080` | dashboard container only: the origin nginx proxies to |
@@ -130,7 +135,8 @@ only as hashes.
 
 **A hosted environment:** create one service per image (§10), with these settings on the **API** service only:
 `Auth__Keys__*` with hashed keys and no anonymous grants, the feed (`Synthetic` until the live feed is verified), and
-the ProjectX credentials if the feed is `ProjectX`. Point the platform's health check at `/health/live`. The
+the ProjectX credentials if the feed is `ProjectX`. Attach one volume to the API service at `/data`, writable by the
+image's non-root app user (§10). Point the platform's health check at `/health/live`. The
 dashboard service gets no API key and no `VITE_*` key: the viewer types the raw key into the page (D-30). Set
 `STAGING_URL` or `PRODUCTION_URL` and `HEALTH_PATH=/health/live` wherever you run the smoke check.
 
@@ -165,7 +171,9 @@ bash scripts/deploy.sh staging 1.3.0     # production: the same with "production
 ```
 
 A rollback restarts the API, which holds market state in memory (D-18): every instrument goes through warmup and
-RECOVERING again, and the current overlay is lost. A viewer's layout comes back when that browser reloads.
+RECOVERING again, and the current overlay is lost. Saved layouts and simulated positions come back from
+`Layouts__StorePath` when it is on a volume. Without one, or with a corrupt file, the page re-sends its local copy when
+that copy matches the layout schema.
 
 ## 7. Known quirks
 
@@ -179,10 +187,12 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
 | RECOVERING after a ProjectX reconnect | A new epoch: the book is unknown until the settle-window snapshot | None, unless it persists |
 | STALE in a quiet market | No event for `Engine:StaleAfterMs` (3 s) | Expected until the gateway's heartbeat behaviour is known |
 | The overlay is gone after a restart | In memory only (D-18) | Expected |
-| A layout comes back only after the browser reloads | The server forgets it; the browser re-sends its valid copy (D-18) | Reload the dashboard in that browser |
+| A layout reads `saved: false` after a restart | `Layouts__StorePath` is not on a volume, or the file was missing or corrupt (the API logs a `Layout store` warning at the first layout request); the browser re-sends its valid copy when the server reports nothing saved (D-18) | Mount a volume at the store's directory (`/data` in the image). Meanwhile, reload the dashboard in that browser |
+| `PUT /api/layouts/me` answers 503 `layout-store-unavailable` | The API could not write `Layouts__StorePath` (a full or read-only volume), or could not move a corrupt file aside. Nothing was saved and the stored revision is unchanged. The log has a `Layout store ... could not be` error naming the path | Free space or fix the volume's permissions. The dashboard keeps the edit pending and sends it again on the next edit or reload |
 | The top bar shows "Market open" on a holiday | Holidays and early closes are not modelled (D-5) | Expected |
 | A replay without `Loop` turns STALE when the file ends | The feed ends and the last state stays | Set `Feed__Replay__Loop=true` for a demo |
-| The feedback spend reads $0 after a restart, or the budget 429 cleared | The monthly count is in memory (FR-74, D-61) | Expected. Check the month's real spend in the Anthropic console |
+| The feedback spend reads $0 after a restart, or the budget 429 cleared | No volume at `/data`, so the budget file was lost with the container; or the file was corrupt (a warning names the path, and the bad file is kept as `.corrupt-<utc>`); or the volume is not writable by the app user (`could not be saved` in the log); or the UTC month turned (FR-74, D-61) | Mount the volume; check the log for `feedback budget file`; check the month's real spend in the Anthropic console |
+| The first start takes longer early in a session | The warmup window also seeds EMA 200 on five-minute bars, about 17 h 45 min mid-week (D-68; [`ARCHITECTURE.md`](ARCHITECTURE.md) *Performance baselines*) | Expected. Name fewer products (`Engine__Instruments__*`) for a quicker start |
 | `GET /api/plans/feedback/status` says `available: false` | `disabled` (`Feedback__Enabled` is false, the production default), `no-key` (Claude with no key) or `budget-exhausted` | Enable it and set the key as a secret, or wait for the next UTC month |
 | Feedback comes back `feedback: null` with a `reason` | The model refused, timed out, was rate limited or failed, or its reply failed the schema; the metrics still come back (FR-74) | Read the one `Feedback call` log line for that request: it names the exception's type and the HTTP status the API answered with, never its message. `HTTP 401` is the key and `HTTP 400` the request the API refused |
 
@@ -195,8 +205,11 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
 - **Position feedback** stays off (`Feedback__Enabled=false`, the shipped default) until you turn it on: then set
   `ANTHROPIC_API_KEY` as a service secret on the API service, keep `Feedback__Provider=Claude`, and give
   `request-feedback` only to the keys that should spend it. The cap is `Feedback__MonthlyBudgetUsd` ($100), counted
-  in memory, so a redeploy resets it (FR-74, D-61).
-- **One instance** per market-data account (§2). No horizontal scaling: state is in memory and the session single.
+  from usage and kept in `Feedback__BudgetStorePath` on the `/data` volume, so a redeploy in the same month resumes
+  it; without a writable `/data` volume it stays in memory and a redeploy resets it (FR-74, D-61).
+- **Layouts.** A volume at `/data` on the API service, so `/data/layouts.json` survives a deploy (D-18).
+- **One instance** per market-data account (§2). No horizontal scaling: state is in memory, the files on `/data`
+  have one writer, and the session is single.
 - **Pinned.** The SDK (`global.json`), every NuGet version (`Directory.Packages.props`), the pnpm lockfile, the base
   images by tag, and the release by its digest (§11).
 
@@ -204,11 +217,13 @@ RECOVERING again, and the current overlay is lost. A viewer's layout comes back 
 
 A release to an environment is, in order:
 
-1. Copy what runs now to `:<environment>-previous`.
+1. Copy what runs now to `:<environment>-previous`, when `:<environment>` already exists. The first deploy of an
+   environment has none.
 2. Point `:<environment>` at the digest you built (§11).
 3. Run `bash scripts/deploy.sh <environment> <version>` and then `bash scripts/smoke-check.sh <environment>`, which
    needs `STAGING_URL` or `PRODUCTION_URL` to answer 2xx on `HEALTH_PATH`.
-4. If either fails, point `:<environment>` back at `:<environment>-previous`, deploy that version, and stop.
+4. If either fails, point `:<environment>` back at `:<environment>-previous`, deploy that version, and stop. On
+   the first deploy there is no previous image: `:<environment>` stays on the new digest, and the rollback is yours.
 
 In the original release pipeline these steps run in a `promote.sh` step that is not part of this repository; the
 references to it in `scripts/deploy.sh` mean this sequence. Nothing else in this repository moves a tag.
@@ -227,7 +242,18 @@ deploys each service in `IMAGES` order and polls it until `SUCCESS` (or `SLEEPIN
 `CRASHED`, `REMOVED`, `REMOVING`, `SKIPPED`, an approval it cannot give, or no success within the polls. A
 deployment that runs a different digest from the one the registry holds for the tag also fails. The service must be
 able to pull from your registry (a credential stored on the Railway service, if the registry is private). Set the
-API service to one replica, no overlap, health check `/health/live` (`railway.toml` holds the same values).
+API service to one replica, no overlap, health check `/health/live` with a 300-second timeout, and restart policy
+`ON_FAILURE` ([`railway.toml`](railway.toml) holds the same five; an image-source service does not read it, so set
+them in the service settings too). `scripts/deploy.sh` changes none of them.
+
+**The `/data` volume.** Attach one volume to the API service at `/data` in each environment; the image already sets
+both store paths under it, and the smallest size is plenty. It must be writable by the image's non-root app user: a
+platform-mounted volume may be owned by root. Check it at the first deploy: after a layout save `/data/layouts.json`
+exists and the log has no `Layout store ... could not be written` error, and after the first paid feedback call the log
+does not say `could not be saved`. On Railway, if that check fails, `RAILWAY_RUN_UID=0` runs the API as root, which
+fixes the permissions; use it only then. Railway allows one volume per service and no replicas beside a volume, which
+this one-replica, zero-overlap service already accepts. A replay file that is not in the image goes on the same
+volume, with `Feed__Replay__Path` pointing at it; never put credentials there.
 
 **Another host.** Set `DEPLOY_PROVIDER` to `azure` or `kubectl`, or add a function beside `deploy_railway` and a
 matching `case` arm. Keep the tag promotion, the smoke URLs and `HEALTH_PATH` as they are.

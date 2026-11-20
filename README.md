@@ -22,6 +22,22 @@ file. Every instrument always says where its data came from: `LIVE`, `REPLAY` or
 > has been checked against a real account ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-1, D-15). Do not run it in a
 > shared environment before then.
 
+## Why this project exists
+
+This started as a working system for one trader: a dashboard that consumes a real-time market-data feed and shows resting liquidity beside executed price. It was built AI-first. AI coding agents wrote the code, the tests and the documentation, working from a written set of requirements, decisions and role contracts, with every change reviewed before it merged.
+
+It is shared as a starting place. If you want a dashboard of your own (different products, panels, signals or data feed), the engineering that every such system needs is already done, and you can spend your time on what makes yours different. It is a read-only view with no order entry, and it makes no claim of trading edge or fitness for trading. The engineering it gives you:
+
+- one upstream market-data session shared by every viewer ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-7, D-11);
+- streaming to the browser over SignalR ([`INTERFACES.md`](INTERFACES.md));
+- provenance on every instrument (`LIVE`, `REPLAY` or `SIMULATED`) and staleness shown, so simulated or replayed data is never presented as live ([`REQUIREMENTS.md`](REQUIREMENTS.md) FR-4);
+- a seeded synthetic feed and a file replay, so you can develop without credentials ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-12);
+- configuration and secrets through environment variables ([`CONVENTIONS.md`](CONVENTIONS.md) §6, [`DEPLOYMENT.md`](DEPLOYMENT.md) §3);
+- API-key authentication with per-instrument grants, and no route or hub method that can place, change or cancel an order ([`CONVENTIONS.md`](CONVENTIONS.md) §4, §11–§12, [`ARCHITECTURE.md`](ARCHITECTURE.md) T-1; keys: D-16);
+- health, readiness and Prometheus metrics ([`OBSERVABILITY.md`](OBSERVABILITY.md));
+- container images, a documented build-and-deploy path and a list of quality checks for a build server ([`DEPLOYMENT.md`](DEPLOYMENT.md) §5, §9, [`CONVENTIONS.md`](CONVENTIONS.md) §10);
+- the documents that explain why each part is the way it is: requirements ([`REQUIREMENTS.md`](REQUIREMENTS.md)), design decisions ([`ARCHITECTURE.md`](ARCHITECTURE.md)) and a threat model ([`ARCHITECTURE.md`](ARCHITECTURE.md), *Threat model*).
+
 ## Screenshots
 
 All five are taken from the synthetic feed, so every price, size and signal in them is simulated, and each view
@@ -129,13 +145,16 @@ docker compose --profile test build unit-tests  # the unit tests, inside the ima
 ```
 
 Compose runs the API in Development, so the page asks for no key and every service listens on `127.0.0.1` only.
+Saved layouts and the feedback budget are kept on the named volume `api-data`, so they survive
+`docker compose down` and `up`; `docker compose down -v` clears them.
 `http://localhost:5080/health/ready` shows each instrument's status once the warmup has loaded. Outside
 Development the page asks for a viewer key ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-30) and `/health/ready` requires
 it; the anonymous check is `/health/live`.
 
 **Which products.** By default every product the feed offers runs (`Engine:Instruments` `*`; about 50 on the
 synthetic feed), with depth only for the pinned products and those a viewer opens or stars (FR-54). Warming all of
-them up takes about a minute and a half on the synthetic feed. For a quicker start, name a few:
+them up takes about a minute and a half on the synthetic feed, longer early in a session, since the warmup window also
+seeds the five-minute EMA 200 ([`ARCHITECTURE.md`](ARCHITECTURE.md) D-68). For a quicker start, name a few:
 `Engine__Instruments__0=ES Engine__Instruments__1=GC Engine__Instruments__2=CL`
 ([`DEPLOYMENT.md`](DEPLOYMENT.md) §3).
 
@@ -184,7 +203,8 @@ Feedback__Enabled=true Feedback__Provider=Claude dotnet run --project src/*.Api 
 ```
 
 Only the position's derived metrics are sent, one request at a time per viewer and six a minute, under a monthly
-spend cap (`Feedback__MonthlyBudgetUsd`, $100, counted in memory). A viewer needs the `request-feedback` grant as well
+spend cap (`Feedback__MonthlyBudgetUsd`, $100, kept in `Feedback__BudgetStorePath` so a restart in the same month
+resumes the count). A viewer needs the `request-feedback` grant as well
 as `view-dashboard` ([`DEPLOYMENT.md`](DEPLOYMENT.md) §3). The feedback is advisory, not financial advice, and nothing
 it says is ever sent to a broker.
 

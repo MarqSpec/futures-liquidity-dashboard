@@ -47,7 +47,7 @@ ingest and publish instruments use a fixed `lane` or `kind` label, never a contr
 | `fld_feedback_requests_total{provider,outcome}` | counter | Position feedback requests (FR-74). `provider` is `claude` or `mock`; `outcome` is `ok`, `refusal`, `timeout`, `error`, `invalid-response`, `over-budget`, `throttled` or `unavailable` |
 | `fld_feedback_duration_milliseconds{provider,outcome}` | histogram | How long a model call took, for the requests that made one |
 | `fld_feedback_tokens_total{kind}` | counter | Tokens the Claude calls used; `kind` is `input`, `output`, `cache-write` or `cache-read`. The mock counts none |
-| `fld_feedback_spend_usd`, `fld_feedback_budget_usd` | gauge | This UTC month's Claude spend in US dollars, counted in memory since the process started (a restart resets it), and `Feedback:MonthlyBudgetUsd` (NFR-9) |
+| `fld_feedback_spend_usd`, `fld_feedback_budget_usd` | gauge | This UTC month's Claude spend in US dollars, counted from usage and kept in `Feedback:BudgetStorePath`, so it resumes after a restart in the same month and starts at zero in a new one; and `Feedback:MonthlyBudgetUsd` (NFR-9) |
 
 Labels stay bounded: `instrument`, `lane`, `kind`, `provider`, `outcome`, never contract ids, key names, prompts, replies or raw paths.
 

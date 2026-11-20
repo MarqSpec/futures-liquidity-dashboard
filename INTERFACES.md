@@ -143,7 +143,9 @@ auto-reconnect (1–5 s), a 15 s keep-alive and a 30 s server timeout. Each repo
 | `GetHistoricalBarsAsync(contract, from, to, Minute, 1, limit 20000, includePartialBar false)` | Warmup for indicators, bars and the session profile; the same call repairs a dropped-trade gap (D-33) | FR-17, FR-25 |
 
 - **History window.** From the earlier of now − `Feed:MinHistoryHours` and the session open, never more than 24 h
-  back (and at least the 7 h the regime needs, FR-56).
+  back. With `Feed:WarmRegimes` true it also reaches back at least the 7 h the regime needs (FR-56) and far enough to
+  hold 1,005 open-market minutes, which seeds EMA 200 on five-minute bars (D-68), still inside 24 h. It is one request
+  per product either way: 1,005 one-minute bars is well under `limit` 20,000.
 - **Bars to prints.** Each one-minute bar becomes up to eight prints at four points 15 s apart, ordered by the bar's
   direction, with its volume split as evenly as whole contracts allow, so the rebuilt bar keeps its OHLC. Warmup
   therefore fills bars, indicators and the session profile approximately, never depth; CVD and the delta detectors
@@ -163,8 +165,9 @@ auto-reconnect (1–5 s), a 15 s keep-alive and a 30 s server timeout. Each repo
 
 **`AgentContext`.** The instrument (root, name, exchange, contract, expiry, tick size and value, price decimals),
 `asOfMs`, `status`, last price, session high and low, `vwap`, the latest one-minute `indicators`, `profiles`,
-`liquidity`, the last 30 minute bars, the last 25 signals, `icebergs`, `keyLevels` and `cvd`. It contains no
-account data.
+`liquidity` (with `endedWalls`, as in D.2), the last 30 minute bars, the last 25 signals (each an
+`orderFlow.signals[]` item as in D.2, so an `Iceberg` carries `hiddenEstimate`), `icebergs`, `keyLevels` and `cvd`.
+It contains no account data.
 
 **`OverlayRequest` (schema version 1).**
 
@@ -193,10 +196,10 @@ The OpenAPI document is generated at runtime: in Development the API serves it a
 
 | Method | Path | Grant | Purpose | Responses | Requirement |
 |---|---|---|---|---|---|
-| GET | `/api/instruments` | any key | The instruments the caller may view, in picker order, each with its info, `status`, `summary` and tab quote (last, open, change, VWAP, nearest level and its touches) | 200 | FR-10, FR-55, FR-57 |
+| GET | `/api/instruments` | any key | The instruments the caller may view, in picker order, each with its info, `status`, `summary` and tab quote (last, open, change, VWAP, nearest level and its touches, and `levels`, each shaped as `levelTouches[]` in D.2 with `held` and `broke`) | 200 | FR-10, FR-55, FR-57, FR-79, FR-83 |
 | GET | `/api/snapshot/{instrument}?historyMinutes=&indicatorMinutes=` | `view-dashboard` | A full `DashboardSnapshot`; `indicatorMinutes` (1, 5 or 15) keeps one timeframe | 200; 403; 404 | FR-1, FR-4 |
-| GET | `/api/layouts/me` | `view-dashboard` | `{saved, revision, layout}`; `saved` false and `revision` 0 when nothing is stored, with the defaults | 200; 403 | FR-9 |
-| PUT | `/api/layouts/me` | `configure-layout` for the layout's instrument | Save `{revision, layout}`; stored only when `revision` matches the stored counter | 200; 409 with the stored document; 400 `ValidationProblem`; 403 | FR-9 |
+| GET | `/api/layouts/me` | `view-dashboard` | `{saved, revision, layout}`; `saved` false and `revision` 0 when the store holds nothing for the caller, with the defaults | 200; 403 | FR-9 |
+| PUT | `/api/layouts/me` | `configure-layout` for the layout's instrument | Save `{revision, layout}`; stored only when `revision` matches the stored counter | 200; 409 with the stored document; 503 ProblemDetails with `reason: "layout-store-unavailable"` when the layout file cannot be written, and nothing is saved; 400 `ValidationProblem`; 403 | FR-9 |
 | POST | `/api/plans/metrics/{instrument}` | `view-dashboard` | The FR-73 metrics of a simulated position. The body is one FR-72 position; nothing is stored | 200 `PlanMetrics`; 400 `ValidationProblem` naming the field; 403; 404 unknown or disabled instrument | FR-73, D-60 |
 | GET | `/api/plans/feedback/status` | `request-feedback` on any instrument | Whether feedback is available, and the month's spend against the cap. Never holds the key | 200 `FeedbackStatus`; 403 | FR-74, D-61 |
 | POST | `/api/plans/feedback/{instrument}` | `request-feedback` **and** `view-dashboard` | Feedback on a simulated position, on request, beside its FR-73 metrics. The body is one FR-72 position; nothing is stored | 200 `PlanFeedbackReply` (feedback, or `feedback: null` with a `reason`); 400; 403; 404; 429 `FeedbackStatus` (`budget-exhausted`) or `FeedbackRefusal` (`rate-limited`, `request-in-flight`), with `Retry-After`; 503 `FeedbackStatus` (`disabled`, `no-key`) | FR-74, D-61 |
@@ -218,15 +221,25 @@ and Detail keep the last price in the middle of the plot, D-54); `detailChart` (
 `footprint`: Detail's main chart, the footprint or the heatmap and candle price chart, D-55);
 `indicatorPane` (`volume`, `cvd`, `rsi14`, `macd`, `atr14` or `tpo`, default `volume`: the tab the indicator dock
 shows on Detail and Order Flow; a `footprint` sent by an older client is stored as `volume`);
-`indicatorDockCollapsed` (boolean, default false; collapses the dock on both tabs); `sideSectionsCollapsed` (any of `ladder`, `liquidity`, `signals`,
-`levels`, `profile`, `layers`; default none); `positions` (a map from product root to one simulated position, default empty, FR-72, D-57); `rangeZoneTimeframe` (`300`, the default, `900` or `off`: the bars whose range zones Detail and Order Flow shade, FR-75; any other value is refused with 400); `showPriceLine` (boolean, default true); `panes` (which includes `range-zones`, the Layers toggle "Range zones", on unless set false) and `signals` (the
-pane and signal ids the client knows). For the optional fields, a PUT that omits one keeps the stored value, and an
-explicit null or an unknown value is refused with 400 (FR-9). Layouts are held in memory per key name; after a
-restart the dashboard re-sends its local copy when it matches the schema.
+`indicatorDockCollapsed` (boolean, default false; collapses the dock on both tabs); `sideSectionsCollapsed` (any of `ladder`, `conditions`, `liquidity`, `signals`,
+`levels`, `profile`, `layers`; default none); `positions` (a map from product root to one simulated position, default empty, FR-72, D-57); `rangeZoneTimeframe` (`300`, the default, `900` or `off`: the bars whose range zones Detail and Order Flow shade, FR-75; any other value is refused with 400); `icebergMinStrengthPercent` and `icebergMinHiddenSize` (integers, 0–100 and 0–100,000, default 0 each: the Detail
+Signals panel lists an iceberg only at or above that strength, in the whole percent the row shows, and with a
+`hiddenEstimate` of at least that many contracts; 0 hides none; display only, so detection, the chart and the Overview
+are not filtered; a value out of range is refused with 400, FR-80); `showPriceLine` (boolean, default true); `panes`
+(which includes `range-zones`, the Layers toggle "Range zones", and `line-tags`, the Layers toggle "Line tags on the
+price axis", each on unless set false; `overlay`, the agent Levels, is on unless set false too, FR-77) and `signals`
+(the pane and signal ids the client knows). For the optional fields, a PUT that omits one keeps the stored value, and
+an explicit null or an unknown value is refused with 400 (FR-9). Layouts and their revisions are kept per key name
+across restarts, in one JSON file at `Layouts:StorePath` (on a volume in a container, D-18): after a restart GET
+returns the last saved document with `saved: true` and its revision, and a PUT must cite that revision. `saved: false`
+with `revision` 0 means the caller never saved, or the file was missing, unreadable or corrupt when the API started;
+the dashboard then re-sends its local copy when it matches the schema. A PUT whose revision matches but which the file
+cannot take answers 503 (`layout-store-unavailable`, no path or error text) and changes nothing; the dashboard keeps
+that write pending and sends it again on the next edit or load.
 
 **`positions`** (FR-72). A position is `side` (`long` or `short`), `entryType` (`limit` or `market`), `entryTicks` (a whole number of ticks; required for a limit), `quantity` (1 to 100), `stopTicks`, `targets` (at most three `{ priceTicks, quantity }`, quantities summing to no more than `quantity`), `contractId` and `createdMs`, plus the tracking fields the dashboard writes as it paper-tracks the position (D-59): `state` (`planned`, `working`, `filled` or `closed`), `fill` (`{ timeMs, priceTicks, riskTicks }` or null) and `exits` (`{ timeMs, priceTicks, quantity, kind }`, `kind` `stop` or `target`). For a long the stop is below the entry and the targets above; a short is the mirror image; every price is a whole number of ticks within 1,000,000,000 of zero. An invalid position in a layout PUT is a 400 that names the field by its path (for example `Positions[MES].StopTicks`); the `/api/plans/*` routes name it as `Position.StopTicks`. A position whose `contractId` is not the root's active contract is dropped on read. A PUT that omits `positions` keeps the stored ones.
 
-**`POST /api/plans/metrics/{instrument}`** (FR-73, D-60). The grant is checked before the body. The response, `PlanMetrics`, carries `definitionsVersion` (1), `instrument`, `contractId`, `asOfMs`, `statusCode`, `lastTicks` and `atrTicks`; `legs[]` (the entry, the stop and each target, in that order), each with its distance from the last price, the resting size ahead, how often recent bars traded strictly through the price, when the price was last reached, what lies in the way, the key levels within 2 ATR and the order flow at the price; the plan's reward to risk, stop distance in ATR, stop placement and, for a market entry, slippage; the two regimes; and the coverage. A value the inputs cannot support is null beside a reason, never zero. Enumerated values are lowercase kebab-case.
+**`POST /api/plans/metrics/{instrument}`** (FR-73, D-60). The grant is checked before the body. The response, `PlanMetrics`, carries `definitionsVersion` (1), `instrument`, `contractId`, `asOfMs`, `statusCode`, `lastTicks` and `atrTicks`; `legs[]` (the entry, the stop and each target, in that order), each with its distance from the last price, the resting size ahead, how often recent bars traded strictly through the price, when the price was last reached, what lies in the way, the key levels within 2 ATR and the order flow at the price; the plan's reward to risk, stop distance in ATR, stop placement and, for a market entry, slippage; the two regimes; and the coverage. A value the inputs cannot support is null beside a reason, never zero. Enumerated values are lowercase kebab-case, except `regimes`, which keeps the `summary.regimes` shape: its `trend` and `basis` keep their PascalCase names and its `thresholds` its camelCase keys, here, in `PlanFeedbackReply.metrics` and in the metrics sent to Claude.
 
 **`POST /api/plans/feedback/{instrument}` and `GET /api/plans/feedback/status`** (FR-74, D-61). Checked in this order: the instrument (404), both grants (403), availability (503 with the status body when feedback is disabled or Claude has no key), the body (400), the month's budget (429 with the status body, and no call), then the viewer's limits (429 `{reason, retryAfterSeconds}`: `rate-limited` after six starts in a minute, `request-in-flight` while that viewer's previous request runs). `PlanFeedbackReply` is `{metrics, feedback, reason, provider, model}`: `provider` is `claude` or `mock`; `reason` is null when `feedback` is set and otherwise one of `refusal`, `truncated`, `invalid-response`, `timeout`, `upstream-rate-limited`, `upstream-error`, `connection-error` or `api-error`. `feedback` is `{summary, legs, risks, asOfMs, definitionsVersion, droppedCites}`: each leg has a `fillLikelihood` (`low`, `medium`, `high`, `unknown`), an `assessment`, a `suggestion` (`{priceTicks, why}` or null) and `cites`, the metric names it rests on; each risk has `text` and `cites`; `droppedCites` counts the claims the server removed. `FeedbackStatus` is `{available, reason, provider, model, spentUsd, budgetUsd, month, resetsAtMs}` and never holds the key.
 
@@ -234,7 +247,11 @@ restart the dashboard re-sends its local copy when it matches the schema.
 
 **`summary`** (FR-55, FR-57; built from trades and quotes only, so cheap for every product): `last`, `bid`, `ask`,
 session open, high and low, `sessionVolume`, `cumulativeDelta`, `delta60s`, `tradeRate`, `lastTradeMs`,
-`latestSignal`, `signals15m` and `regimes` (one per regime timeframe: trend, readiness and every input, FR-56).
+`latestSignal`, `signals15m`, `regimes` (one per regime timeframe: trend, readiness and every input, FR-56) and
+`tape` (FR-83, as `liquidity.tape` in D.2). Each regime also carries `basis`, the test of the rule that decided the
+trend (`Warmup`, `TrendMet`, `DirectionDisagrees`, `RangeMet` or `Between`), and `thresholds`,
+`{trendAdx, trendEfficiency, rangeAdx, rangeEfficiency}`, the limits it was judged against. `basis`, `thresholds` and
+`tape` are additive: a client that reads none of them still reads `trend`.
 
 ### D.2 Streaming
 
@@ -288,14 +305,14 @@ null otherwise; the client keeps the zones it holds on null.
 | `bars[]`, `minuteBars[]` | `{t, d, o, h, l, c, v, bv, sv, n}`; null prices for an empty bin |
 | `indicators[]` | `{id, label, kind, tf, warmup, seen, ready, points, dev}`; a hub message carries only the connection's timeframe |
 | `profiles[]` | `{window, bins, total, poc, vah, val, vaFraction, partialSinceMs, missingRanges, approximateRanges, hvn, lvn}` for `session`, `1h`, `4h`, `5d` |
-| `levelTouches[]` | `{name, priceTicks, isHigh, touches, lastTouchMs, isThirdTouch, sessionId, asOfMs}` |
+| `levelTouches[]` | `{name, priceTicks, isHigh, touches, lastTouchMs, isThirdTouch, sessionId, asOfMs, held, broke}`. `held` and `broke` count the touches that held and that broke (a closed minute 2 ticks or more beyond the level, on the far side from the approach) and add up to `touches`; a reader that predates them may treat both as 0 (FR-79, D-65) |
 | `prints[]` | `{sourceTimeMs, priceTicks, quantity, aggressor, sequence}`; live executions only, capped at `Engine:PrintCapacity` (D-34, FR-61) |
 | `vwap` | `{vwap, stdDev, volume, partial, anchor}` |
-| `liquidity` | FR-36–FR-40, with `quoteTimeMs` and `quoteStale` |
+| `liquidity` | FR-36–FR-40, with `quoteTimeMs` and `quoteStale`. The flow over 10 s and 60 s (`flow10s`, `flow60s`) is `bidAdded`, `bidPulled`, `bidFilled`, `askAdded`, `askPulled`, `askFilled`, FR-38's fill-adjusted `netBid` and `netAsk`, and `netFlowBid` and `netFlowAsk`, each added − pulled (FR-76). `endedWalls` is the last 5 reported walls that ended in the last 15 minutes, newest first, each `{side, priceTicks, peakQuantity, filled, pulled, stoodMs, endedMs, outcome}`, `outcome` being `Filled`, `Pulled` or `BelowThreshold`; it is never absent from this server, and a client reads a missing list as empty (FR-78). `tape` is `{state, rate, baselineRate, thinBelowRate, baselineMinutes}`: `state` is `Active`, `Thin` or `Unknown`, and `Unknown` whenever the status is RECOVERING or STALE or the exchange is closed; `rate` is FR-39's trade rate; `baselineRate` is the median 10 s rate over the last `baselineMinutes` and `thinBelowRate` that times `Engine:Tape:ThinRatio`, both null while `Unknown`. A reader that predates it reads no state (FR-83, D-70) |
 | `ladder` | `{bids, asks}`, up to `Engine:LadderLevels` (default 40) per side; a shorter book is not padded |
 | `overlay` | the current overlay with its times, `expired` flag, levels and rationale, or null |
 | `rangeZones[]` | One entry per `Engine:Regime:TimeframesSeconds` value, `{timeframeSeconds, zones: [{startMs, endMs, lowTicks, highTicks}]}`, oldest zone first, empty when nothing has ranged. A zone is a maximal run of consecutive closed bars that FR-56's own classifier called Ranging, from the first bar's open to the last bar's close, between the lowest and highest trade in them. A bar of another class, or with no trades, ends it; the developing bar is never in one. A zone is dropped once its `endMs` is older than the retained minute bars. The client draws the zones of the layout's `rangeZoneTimeframe` and never classifies a regime (FR-75, D-62) |
-| `orderFlow` | `cvd`, `cvdPoints`, `footprints[]` and `developingFootprint` (cells per tick with bid volume, ask volume and imbalance flag), `signals[]`, `lastSignalId`, `icebergs`, `zones`, `unfinishedAuctions`, `keyLevels`, `tpo`, `footprintSeconds` |
+| `orderFlow` | `cvd`, `cvdPoints`, `footprints[]` and `developingFootprint` (cells per tick with bid volume, ask volume and imbalance flag), `signals[]`, `lastSignalId`, `icebergs`, `zones`, `unfinishedAuctions`, `keyLevels`, `tpo`, `footprintSeconds`. An `Iceberg` signal also carries `hiddenEstimate`, the lower bound on its hidden size that its `detail` states as "hidden ≥" (FR-52), and a signal raised while the tape was thin carries `thinTape: true`; every other signal omits the field, so a reader that predates them reads every signal as untagged (FR-80, FR-83) |
 
 The TypeScript client validates every message against its schemas (`src/dashboard/src/api/schemas.ts`) and refuses
 one that does not match.
