@@ -31,6 +31,16 @@ There is no `VITE_*` API key: outside Development the page asks for the key and 
 for that tab ([`ARCHITECTURE.md`](../../ARCHITECTURE.md) D-30). Development's
 anonymous grants open the page with no prompt. The Android shell uses that same prompt.
 
+## Sign-in
+
+When the API's `GET /api/auth/config` names an OpenID Connect provider (`Auth__Oidc__*`,
+[`ARCHITECTURE.md`](../../ARCHITECTURE.md) D-77), the browser signs in with it instead of asking for a key: the
+Authorization Code flow with PKCE, as a public client, redirected to `/auth/callback` (`src/lib/oidc.ts`,
+`src/components/SignInGate.tsx`). The access token is kept in `sessionStorage` for the tab, refreshed before it
+expires, and sent as `Authorization: Bearer` on `/api` and as the SignalR access token on `/hubs/market`, in the
+key's place. **Sign out** ends the provider's session. The provider must list `<dashboard origin>/auth/callback` as a
+redirect URI and the dashboard origin as a web origin. The Android shell keeps the key prompt.
+
 ## API key
 
 The key is a password field. It is sent as `X-Api-Key` on `/api` and as the SignalR access token on
