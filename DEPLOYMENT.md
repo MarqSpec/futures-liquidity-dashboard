@@ -89,9 +89,15 @@ only as hashes.
 | `Api__PublishTimeoutMs` | no | `1000` | How long one browser may take a delta before its connection is aborted (D-32) |
 | `Api__MaxWatchlist` | no | `12` | Most starred products per viewer (FR-55) |
 | `Layouts__StorePath` | no | `data/layouts.json` under the content root; `/data/layouts.json` in the image | The file that keeps every viewer's saved layout, simulated positions and revision across restarts (FR-9, FR-72, D-18). A relative path is taken from the content root; one that names a directory (ends in `/` or `\`) fails startup; blank keeps layouts in memory only. Mount a volume at its directory, or a redeploy loses it. A missing or corrupt file starts empty with a warning, and a corrupt or unreadable one is renamed to `layouts.json.corrupt-<UTC time>` before the next save, never overwritten. Holds no key or credential |
-| `Auth__Keys__0__Name`, `__KeySha256`, `__Grants__0` … | outside Development | none | API keys: a name, the key's SHA-256 as 64 hex characters, and `permission:scope` grants (D-16). Outside Development the process refuses to start without at least one. The dashboard viewer needs `view-dashboard` and `configure-layout` |
+| `Auth__Keys__0__Name`, `__KeySha256`, `__Grants__0` … | outside Development | none | API keys: a name, the key's SHA-256 as 64 hex characters, and `permission:scope` grants (D-16). Outside Development the process refuses to start without at least one, unless sign-in is on (D-77). The dashboard viewer needs `view-dashboard` and `configure-layout` |
 | `Auth__AnonymousGrants__0` … | no | none; all five in Development | Grants for a request with no key. Startup fails if any are set outside Development |
 | `Auth__ProtectDiagnostics` | no | unset: protected outside Development | `true` requires a key for `/health/ready`, `/metrics` and `/api/diagnostics/depth-width` even in Development; `false` leaves them anonymous everywhere. `/health/live` is always anonymous |
+| `Auth__Oidc__Enabled` | no | `false` | Sign-in through an OpenID Connect provider (D-77). False keeps the key prompt |
+| `Auth__Oidc__Authority` | when sign-in is on | none | The issuer URL, https (for Keycloak, `https://<host>/realms/<realm>`). Its discovery document must name the same issuer |
+| `Auth__Oidc__ClientId` | when sign-in is on | none | The provider's public client for the dashboard |
+| `Auth__Oidc__Audience` | no | the client id | The `aud` the access token must carry |
+| `Auth__Oidc__Scope` | no | `openid profile` | Scopes the page asks for; `openid` is always added |
+| `Auth__Oidc__Grants__0` … | when sign-in is on | none | `permission:scope` grants every signed-in viewer gets, e.g. `view-dashboard:*` and `configure-layout:*`. Startup fails without one |
 | `Agent__Enabled`, `__IntervalSeconds`, `__FirstRunSeconds` | no | `true`, `60`, `15` | The reference agent (D-17) |
 | `Feedback__Enabled` | no | `false`; `true` in Development | Position feedback (FR-74, D-61). False hides it: both feedback routes say it is unavailable, and the POST answers 503 `disabled` |
 | `Feedback__Provider` | no | `Claude`; `Mock` in Development, and so in compose | `Claude` calls the Messages API with the key below; `Mock` writes deterministic feedback from the metrics, needs no key and costs nothing |

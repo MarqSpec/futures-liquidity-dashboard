@@ -196,6 +196,7 @@ The OpenAPI document is generated at runtime: in Development the API serves it a
 
 | Method | Path | Grant | Purpose | Responses | Requirement |
 |---|---|---|---|---|---|
+| GET | `/api/auth/config` | none | How the page signs in: `{ oidc: { authority, clientId, scope } }`, or `{ oidc: null }` when sign-in is off. Never a grant or a secret | 200 | NFR-6, D-77 |
 | GET | `/api/instruments` | any key | The instruments the caller may view, in picker order, each with its info, `status`, `summary` and tab quote (last, open, change, VWAP, nearest level and its touches, and `levels`, each shaped as `levelTouches[]` in D.2 with `held` and `broke`) | 200 | FR-10, FR-55, FR-57, FR-79, FR-83 |
 | GET | `/api/snapshot/{instrument}?historyMinutes=&indicatorMinutes=` | `view-dashboard` | A full `DashboardSnapshot`; `indicatorMinutes` (1, 5 or 15) keeps one timeframe | 200; 403; 404 | FR-1, FR-4 |
 | GET | `/api/layouts/me` | `view-dashboard` | `{saved, revision, layout}`; `saved` false and `revision` 0 when the store holds nothing for the caller, with the defaults | 200; 403 | FR-9 |
@@ -211,7 +212,9 @@ The OpenAPI document is generated at runtime: in Development the API serves it a
 **Authentication (D-16, D-30).** `X-Api-Key: <key>` on every request. On `/hubs` paths only, SignalR may pass the
 key as `access_token` in the query string or as `Authorization: Bearer`. No key gets the configured anonymous
 grants (all five in Development, none in production, so 401). An unknown key is always 401. A grant is
-`permission:scope`, with scope an instrument root or `*`.
+`permission:scope`, with scope an instrument root or `*`. With `Auth:Oidc:Enabled` true (D-77), `Authorization: Bearer
+<access token>` from the configured provider is accepted as well, on `/hubs` also as `access_token`; a valid token gets
+`Auth:Oidc:Grants`. An `X-Api-Key` header always wins.
 
 **`LayoutSettings`.** `instrument` (a root, default `MES`); `watchlist` (up to `Api:MaxWatchlist` distinct roots,
 default `MES`, `MCL`, `MGC`); `sliceSeconds` (1 or 5); `chartMinutes` (1, 2, 5 or 15, default 1);

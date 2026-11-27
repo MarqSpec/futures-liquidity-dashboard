@@ -12,7 +12,7 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-700.css";
 
-import { ApiKeyGate } from "./components/ApiKeyGate.tsx";
+import { AuthGate } from "./components/AuthGate.tsx";
 import { ServiceWorkerUpdate } from "./components/ServiceWorkerUpdate.tsx";
 import "./design/tokens.css";
 import "./index.css";
@@ -34,9 +34,9 @@ createRoot(container).render(
   <StrictMode>
     <AppGate>
       <ServiceWorkerUpdate />
-      <ApiKeyGate>
+      <AuthGate>
         <RouterProvider router={router} />
-      </ApiKeyGate>
+      </AuthGate>
     </AppGate>
   </StrictMode>,
 );

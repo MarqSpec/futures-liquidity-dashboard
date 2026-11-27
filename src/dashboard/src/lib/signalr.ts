@@ -10,6 +10,7 @@ import {
 } from "@microsoft/signalr";
 
 import { readApiKey } from "./apiKey.ts";
+import { readAccessToken } from "./oidc.ts";
 import { redactSecrets } from "./redactSecrets.ts";
 import { currentHubUrl, isNativeShell } from "./serverUrl.ts";
 
@@ -93,9 +94,14 @@ function errorText(error: unknown): string | null {
  * which is how Development's anonymous grants keep working. The native shell skips negotiate and uses the
  * WebSocket only; the factory still supplies `access_token`.
  */
-export function marketHubOptions(readKey: () => string | null = readApiKey, native: boolean = isNativeShell()): IHttpConnectionOptions {
+export function marketHubOptions(
+  readKey: () => string | null = readApiKey,
+  native: boolean = isNativeShell(),
+  readToken: () => string | null = readAccessToken,
+): IHttpConnectionOptions {
   const options: IHttpConnectionOptions = {
-    accessTokenFactory: () => readKey() ?? "",
+    // A signed-in tab's access token wins over a viewer key (ARCHITECTURE.md D-77).
+    accessTokenFactory: () => readToken() ?? readKey() ?? "",
   };
   if (native) {
     // The WebView origin is not the server, and the API sends no CORS headers. The socket still carries access_token.

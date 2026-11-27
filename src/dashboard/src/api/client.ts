@@ -4,6 +4,7 @@ import type { LayoutSettings } from "../domain/layout.ts";
 import { layoutDocumentSchema, type ServerLayout } from "../domain/layoutPersistence.ts";
 import { readApiKey, reportUnauthorized } from "../lib/apiKey.ts";
 import { DeadlineExceeded, performHttp } from "../lib/httpTransport.ts";
+import { authConfigSchema, readAccessToken, type AuthConfig } from "../lib/oidc.ts";
 import { currentApiBaseUrl, isNativeShell } from "../lib/serverUrl.ts";
 import { instrumentSummariesSchema, type InstrumentSummary } from "./schemas.ts";
 
@@ -71,8 +72,12 @@ function headersFor(init: RequestInit): Record<string, string> {
       }
     }
   }
-  const key = readApiKey();
-  if (key) {
+  // A signed-in tab sends its access token; otherwise the viewer key, if any (ARCHITECTURE.md D-30, D-77).
+  const token = readAccessToken();
+  const key = token ? null : readApiKey();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  } else if (key) {
     headers["X-Api-Key"] = key;
   }
   return headers;
@@ -149,6 +154,11 @@ export async function read<T>(path: string, schema: z.ZodType<T>, signal?: Abort
 /** GET /api/instruments: the instruments this viewer may see, with their status. */
 export function getInstruments(signal?: AbortSignal, options?: CallOptions): Promise<InstrumentSummary[]> {
   return read("/api/instruments", instrumentSummariesSchema, signal, options);
+}
+
+/** GET /api/auth/config: how this API signs viewers in, asked with no credential (ARCHITECTURE.md D-77). */
+export function getAuthConfig(signal?: AbortSignal): Promise<AuthConfig> {
+  return read("/api/auth/config", authConfigSchema, signal, { reportUnauthorized: false });
 }
 
 /** GET /api/layouts/me: the viewer's layout, and whether this process has a saved one. */
