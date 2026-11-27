@@ -14,7 +14,6 @@ using MarqSpec.FuturesLiquidityDashboard.Core.Overlays;
 using MarqSpec.FuturesLiquidityDashboard.Api.ProjectX;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.Hosting;
 using MarqSpec.FuturesLiquidityDashboard.Ingestion.ProjectX;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using OpenTelemetry.Metrics;
@@ -52,19 +51,9 @@ builder.Services.AddHostedService<ReferenceOverlayAgent>();
 // Position feedback on request: Claude in the API, or the deterministic mock in Development (ARCHITECTURE.md D-61).
 builder.Services.AddPositionFeedback(builder.Configuration);
 
-// Viewer and agent access (ARCHITECTURE.md D-16).
-builder.Services.AddOptions<AuthOptions>()
-    .Bind(builder.Configuration.GetSection(AuthOptions.Section))
-    .Validate(o => o.Keys.All(k => k.KeySha256.Length == 64 && k.Grants.All(Permissions.IsValidGrant))
-        && o.AnonymousGrants.All(Permissions.IsValidGrant), "Every Auth grant must be permission:scope and every key hash 64 hex characters.")
-    // Anonymous access is a local-development convenience only (ARCHITECTURE.md T-4): refuse to start with it elsewhere.
-    .Validate(o => o.AnonymousGrants.Count == 0 || builder.Environment.IsDevelopment(), "Auth:AnonymousGrants is allowed only in the Development environment.")
-    // Outside Development every caller needs a key. An empty list would only answer 401, which hides a missed setting.
-    .Validate(o => builder.Environment.IsDevelopment() || o.Keys.Count > 0, "Auth:Keys must contain at least one key outside the Development environment.")
-    .ValidateOnStart();
-builder.Services.AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, null);
-builder.Services.AddAuthorization();
+// Viewer and agent access: API keys (ARCHITECTURE.md D-16), and sign-in through an OpenID Connect provider when
+// Auth:Oidc:Enabled is true (D-77).
+builder.Services.AddDashboardAuth(builder.Configuration, builder.Environment);
 
 // One JSON shape for HTTP and SignalR: camelCase, enums as strings (INTERFACES.md D.2).
 static void ConfigureJson(JsonSerializerOptions o)
@@ -123,6 +112,7 @@ if (protectDiagnostics)
     ready.RequireAuthorization();
 }
 
+app.MapAuthConfig();
 app.MapDashboardApi();
 app.MapPlanFeedback();
 app.MapHub<MarketHub>(MarketHub.Path);

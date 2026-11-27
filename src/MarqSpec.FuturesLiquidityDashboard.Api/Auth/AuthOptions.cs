@@ -29,6 +29,9 @@ public sealed class AuthOptions
 
     /// <summary>Whether detailed readiness and metrics require an authenticated caller in this environment.</summary>
     public bool RequiresKeyForDiagnostics(bool isDevelopment) => ProtectDiagnostics ?? !isDevelopment;
+
+    /// <summary>Sign-in through an OpenID Connect provider, beside the keys (ARCHITECTURE.md D-77). Off by default.</summary>
+    public OidcOptions Oidc { get; set; } = new();
 }
 
 public sealed class ApiKeyEntry
